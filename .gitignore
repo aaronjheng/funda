@@ -1,0 +1,35 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Configuration files (user-specific)
+config.yaml
+*.local.yaml
+*.local.yml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Ruff
+.ruff_cache/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/

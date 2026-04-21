@@ -1,0 +1,411 @@
+"""Funda data retrieval module"""
+
+import json
+import os
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+
+# XDG cache directory
+XDG_CACHE_HOME = os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
+CACHE_DIR = Path(XDG_CACHE_HOME) / "funda"
+CACHE_FILE = CACHE_DIR / "fund_data_cache.json"
+CACHE_DURATION = 43200  # Cache for 12 hours (43200 seconds) - ensures data refreshes after market close
+
+# Memory cache for fast access
+_memory_cache = None
+_memory_cache_timestamp = None
+
+
+def _get_cache_dir() -> Path:
+    """Get or create cache directory following XDG spec"""
+    cache_dir = Path(XDG_CACHE_HOME) / "funda"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def _load_cache():
+    """Load cached fund data from disk"""
+    cache_file = _get_cache_dir() / "fund_data_cache.json"
+
+    if not cache_file.exists():
+        return None, None
+
+    try:
+        with open(cache_file, encoding="utf-8") as f:
+            cache_data = json.load(f)
+
+        timestamp = datetime.fromisoformat(cache_data["timestamp"])
+
+        if not _should_refresh_cache(timestamp):
+            return cache_data["data"], timestamp
+    except (json.JSONDecodeError, KeyError, ValueError):
+        pass
+
+    return None, None
+
+
+def _save_cache(data):
+    """Save fund data to disk cache"""
+    cache_file = _get_cache_dir() / "fund_data_cache.json"
+
+    cache_data = {
+        "timestamp": datetime.now().isoformat(),
+        "data": data,
+    }
+
+    try:
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
+
+
+def _get_cached_fund_data():
+    """Get cached fund data or fetch new data if cache expired"""
+    global _memory_cache, _memory_cache_timestamp
+
+    if (
+        _memory_cache is not None
+        and _memory_cache_timestamp is not None
+        and not _should_refresh_cache(_memory_cache_timestamp)
+    ):
+        return _memory_cache
+
+    cached_data, timestamp = _load_cache()
+    if cached_data is not None:
+        print("Loaded data from disk cache")
+        _memory_cache = cached_data
+        _memory_cache_timestamp = timestamp
+        return cached_data
+
+    return None
+
+
+def _fetch_and_cache_fund_data():
+    """Fetch new fund data from API and cache it"""
+    global _memory_cache, _memory_cache_timestamp
+
+    try:
+        import akshare as ak
+
+        print("Fetching data from AKShare API...")
+        df = ak.fund_open_fund_daily_em()
+        if df is not None and not df.empty:
+            data_dict = df.to_dict(orient="records")
+            _save_cache(data_dict)
+            _memory_cache = data_dict
+            _memory_cache_timestamp = datetime.now()
+            print(f"Fetched and cached {len(data_dict)} funds")
+            return data_dict
+    except Exception as e:
+        print(f"Failed to fetch data: {e}")
+
+    return None
+
+
+@dataclass
+class FundData:
+    """Fund data class"""
+
+    code: str
+    alias: str
+    name: str = ""
+    nav: float = 0.0  # Net Asset Value (latest trading day)
+    acc_nav: float = 0.0  # Accumulated NAV
+    nav_date: str = ""  # Date of the NAV (latest trading day)
+    day_change: float = 0.0  # Daily change
+    estimate_nav: float = 0.0  # Estimated NAV (real-time)
+    estimate_time: str = ""  # Estimate time
+    prev_nav: float = 0.0  # Previous trading day's NAV
+
+    @property
+    def day_change_percent(self) -> float:
+        """Calculate daily change percentage"""
+        if self.prev_nav == 0:
+            return 0.0
+        return ((self.nav - self.prev_nav) / self.prev_nav) * 100
+
+    @property
+    def estimate_change_percent(self) -> float:
+        """Calculate estimated change percentage"""
+        if self.nav == 0:
+            return 0.0
+        return ((self.estimate_nav - self.nav) / self.nav) * 100
+
+
+def _should_refresh_cache(timestamp: datetime) -> bool:
+    """Check if cache should be refreshed based on trading hours"""
+    age_seconds = (datetime.now() - timestamp).total_seconds()
+    now = datetime.now()
+
+    # During trading hours (9:30-15:00 on weekdays), use shorter cache
+    if is_trading_day(now) and 9 <= now.hour < 15:
+        # Use 5-minute cache during trading hours
+        trading_cache_duration = 300
+        if age_seconds > trading_cache_duration:
+            return True
+    elif age_seconds >= CACHE_DURATION:
+        return True
+
+    # After market close (15:00+), check if cache is from earlier date
+    if is_trading_day(now) and now.hour >= 15:
+        cache_date = timestamp.date()
+        today_date = now.date()
+
+        if cache_date < today_date:
+            last_trading_day = get_last_trading_date(today_date)
+            if cache_date < last_trading_day.date():
+                return True
+
+    return False
+
+
+def is_trading_day(date: datetime) -> bool:
+    """Check if given date is a trading day (not weekend)
+
+    Args:
+        date: Date to check
+
+    Returns:
+        True if trading day
+    """
+    # 0=Monday, 5=Saturday, 6=Sunday
+    return date.weekday() < 5
+
+
+def get_last_trading_date(date: datetime) -> datetime:
+    """Get the last trading date (handles weekends)
+
+    Args:
+        date: Current date
+
+    Returns:
+        Last trading date
+    """
+    # Go back until we find a trading day
+    last_date = date
+    while not is_trading_day(last_date):
+        last_date -= timedelta(days=1)
+    return last_date
+
+
+def get_fund_data(code: str, alias: str = "") -> FundData:
+    """Get fund data
+
+    This function handles both trading and non-trading days:
+    - On trading days with active market: returns real-time data
+    - On non-trading days: returns latest historical data with correct date
+
+    Args:
+        code: Fund code
+        alias: Fund alias
+
+    Returns:
+        FundData: Fund data
+    """
+    fund = FundData(code=code, alias=alias)
+    today = datetime.now()
+
+    # Try to fetch data from cached open fund daily data (for non-ETF funds)
+    try:
+        # First try to get cached data
+        cached_data = _get_cached_fund_data()
+
+        # If no cache exists, fetch and cache new data
+        if cached_data is None:
+            cached_data = _fetch_and_cache_fund_data()
+
+        if cached_data is not None:
+            # Build a dict for O(1) lookup instead of O(n) linear search
+            cached_data_dict = {
+                row.get("基金代码"): row for row in cached_data if row.get("基金代码")
+            }
+            row = cached_data_dict.get(code)
+            if row:
+                fund.name = str(row.get("基金简称", alias or code))
+                # Get all NAV columns (sorted by date in column name)
+                nav_cols = sorted([key for key in row if "单位净值" in key])
+                if nav_cols:
+                    nav_col = nav_cols[-1]  # Latest NAV
+                    fund.nav = float(row.get(nav_col, 0) or 0)
+                    # Try to get previous NAV
+                    if len(nav_cols) >= 2:
+                        prev_nav_col = nav_cols[-2]
+                        fund.prev_nav = float(row.get(prev_nav_col, 0) or 0)
+
+                    # Calculate daily change
+                    fund.day_change = fund.nav - fund.prev_nav
+
+                    acc_nav_col = nav_col.replace("单位", "累计")
+                    fund.acc_nav = float(row.get(acc_nav_col, 0) or 0)
+                    # Extract date from column name like "2026-04-17-net-value"
+                    if "-" in nav_col:
+                        parts = nav_col.split("-")
+                        fund.nav_date = (
+                            "-".join(parts[:3]) if len(parts) >= 3 else parts[0]
+                        )
+                    else:
+                        fund.nav_date = today.strftime("%Y-%m-%d")
+                return fund
+    except Exception:
+        pass
+
+    # Fallback to ETF data source for ETF funds
+    try:
+        import akshare as ak
+
+        df = ak.fund_etf_category_sina(symbol="ETF基金")
+        if df is not None and not df.empty:
+            for prefix in ["sz", "sh"]:
+                sina_code = f"{prefix}{code}"
+                row = df[df["代码"] == sina_code]
+                if not row.empty:
+                    row_data = row.iloc[0]
+                    fund.name = str(row_data.get("名称", alias or code))
+                    fund.estimate_nav = float(row_data.get("最新价", 0) or 0)
+                    fund.nav = fund.estimate_nav
+                    prev_close = float(row_data.get("昨收", 0) or 0)
+                    if prev_close > 0 and fund.estimate_nav > 0:
+                        fund.day_change = fund.estimate_nav - prev_close
+                    fund.nav_date = today.strftime("%Y-%m-%d")
+                    return fund
+    except Exception:
+        pass
+
+    return fund
+
+
+def get_realtime_estimate(code: str) -> tuple[float, str]:
+    """Get fund real-time estimate data
+
+    For ETF funds, returns real-time price.
+    For regular funds, returns daily growth rate estimate.
+
+    Args:
+        code: Fund code
+
+    Returns:
+        (estimate_nav, update_time)
+    """
+    try:
+        import akshare as ak
+
+        # Try ETF first (real-time data available)
+        df = ak.fund_etf_category_sina(symbol="ETF基金")
+        if df is not None and not df.empty:
+            for prefix in ["sz", "sh"]:
+                sina_code = f"{prefix}{code}"
+                row = df[df["代码"] == sina_code]
+                if not row.empty:
+                    latest_price = float(row.iloc[0].get("最新价", 0) or 0)
+                    update_time = datetime.now().strftime("%H:%M:%S")
+                    return latest_price, update_time
+    except Exception:
+        pass
+
+    # Fallback to cached data for non-ETF funds
+    try:
+        cached_data = _get_cached_fund_data()
+
+        if cached_data is None:
+            cached_data = _fetch_and_cache_fund_data()
+
+        if cached_data is not None:
+            cached_data_dict = {
+                row.get("基金代码"): row for row in cached_data if row.get("基金代码")
+            }
+            row = cached_data_dict.get(code)
+            if row:
+                nav_cols = sorted([key for key in row if "单位净值" in key])
+                if nav_cols:
+                    nav_col = nav_cols[-1]
+                    latest_price = float(row.get(nav_col, 0) or 0)
+                    # Use daily growth rate if available
+                    daily_growth_rate = row.get("日增长率", 0)
+                    if daily_growth_rate:
+                        try:
+                            growth_pct = float(daily_growth_rate.strip("%"))
+                            estimate = latest_price * (1 + growth_pct / 100)
+                            update_time = datetime.now().strftime("%H:%M:%S")
+                            return estimate, update_time
+                        except (ValueError, AttributeError):
+                            pass
+                    update_time = datetime.now().strftime("%H:%M:%S")
+                    return latest_price, update_time
+    except Exception:
+        pass
+
+    return 0.0, ""
+
+
+def search_fund(keyword: str) -> list[dict]:
+    """Search fund
+
+    Args:
+        keyword: Search keyword
+
+    Returns:
+        List of funds
+    """
+    results = []
+
+    # Try open fund data first (for non-ETF funds) using cache
+    try:
+        # Try to get cached data first
+        cached_data = _get_cached_fund_data()
+
+        # If no cache exists, fetch and cache new data
+        if cached_data is None:
+            cached_data = _fetch_and_cache_fund_data()
+
+        if cached_data is not None:
+            # Search in cached data
+            matched = [
+                row
+                for row in cached_data
+                if keyword in str(row.get("基金代码", ""))
+                or keyword in str(row.get("基金简称", ""))
+            ][:10]  # Limit to 10 results
+
+            for row in matched:
+                nav_col = next((key for key in row if "单位净值" in key), None)
+                results.append(
+                    {
+                        "基金代码": row.get("基金代码"),
+                        "基金名称": row.get("基金简称"),
+                        "最新价": row.get(nav_col, "") if nav_col else "",
+                        "涨跌幅": row.get("日增长率", ""),
+                    }
+                )
+            if results:
+                return results
+    except Exception:
+        pass
+
+    # Fallback to ETF data source
+    try:
+        import akshare as ak
+
+        df = ak.fund_etf_category_sina(symbol="ETF基金")
+        if df is not None and not df.empty:
+            df["基金代码"] = df["代码"].str.extract(r"(\d+)")
+
+            matched = df[
+                df["基金代码"].str.contains(keyword, na=False)
+                | df["名称"].str.contains(keyword, na=False)
+            ]
+
+            for _, row in matched.head(10).iterrows():
+                results.append(
+                    {
+                        "基金代码": row["基金代码"],
+                        "基金名称": row["名称"],
+                        "最新价": row.get("最新价", ""),
+                        "涨跌幅": row.get("涨跌幅", ""),
+                    }
+                )
+    except Exception as e:
+        print(f"Error searching fund: {e}")
+
+    return results

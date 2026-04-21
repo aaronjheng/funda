@@ -1,0 +1,29 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+jobs:
+  ruff:
+    name: Ruff Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run Ruff
+        uses: astral-sh/ruff-action@0ce1b0bf8b818ef400413f810f8a11cdbda0034b # v4.0.0
+        with:
+          src: "./preprocess"
+          github-token: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
+
+      # Drop this step in the future.
+      # See https://github.com/astral-sh/ruff/issues/8232.
+      - name: Run format check
+        run: ruff format --check --diff

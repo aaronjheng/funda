@@ -30,7 +30,7 @@ just bump-deps
 ## Git Workflow
 
 - Never run `git commit`, `git push`, or other git mutations unless explicitly instructed
-- Always ask for confirmation before committing or pushing
+- If explicitly instructed to commit or push, execute directly without extra confirmation
 - Commit message rules:
   - One sentence only
   - No Conventional Commit prefixes

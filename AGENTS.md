@@ -7,15 +7,19 @@ A fund valuation TUI tool built with Python, using AKShare to fetch fund data an
 ## Environment
 
 - Python 3.14+
-- Use UV for dependency management and running commands
+- Use UV for dependency management
+- Prefer `just` for common development commands
 
 ## Common Commands
 
 ```bash
 uv sync
 uv run funda
-uv run ruff check src/
-uv run ruff format src/
+just lint
+just lint-with-fix
+just format
+just format-check
+just bump-deps
 ```
 
 ## Code Quality

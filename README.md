@@ -2,9 +2,28 @@
 
 A terminal UI tool for tracking and viewing fund valuation data, built with Python, Textual, and AKShare.
 
-## Config
+## Configuration
 
 See [funda.example.yaml](contrib/funda.example.yaml) for reference.
+
+### Config Fields
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `groups` | `list[object]` | No | Fund groups shown in the group selector. Default: `[{"name": "全部", "funds": []}]`. |
+| `groups[].name` | `string` | Yes | Group name (for example `全部`, `指数基金`). |
+| `groups[].funds` | `list[object]` | No | Funds under this group. Default: `[]`. |
+| `groups[].funds[].code` | `string` | Yes | Fund code, for example `110003`. |
+| `groups[].funds[].alias` | `string` | No | Display name override in UI. If omitted, fund code is shown. |
+| `refresh_interval` | `integer` | No | Refresh interval in seconds. Default: `60`. |
+| `alerts` | `object` | No | Alert settings container. |
+| `alerts.highlight_threshold` | `number` | No | Reserved alert threshold in percent. Default: `2.0`. |
+
+Notes:
+
+- `全部` is treated specially: the app auto-builds its `funds` from all non-`全部` groups.
+- Unknown fields are ignored.
+- `alerts.highlight_threshold` is currently a reserved field and is not yet applied in UI logic.
 
 ### Config File Search Order
 
@@ -14,7 +33,7 @@ See [funda.example.yaml](contrib/funda.example.yaml) for reference.
 You can bootstrap local config from the example:
 
 ```bash
-cp contrib/funda.yaml.example funda.yaml
+cp contrib/funda.example.yaml funda.yaml
 ```
 
 ## License

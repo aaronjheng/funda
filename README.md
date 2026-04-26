@@ -12,7 +12,7 @@ Config file search order:
 You can bootstrap local config from the example:
 
 ```bash
-cp funda.yaml.example funda.yaml
+cp contrib/funda.yaml.example funda.yaml
 ```
 
 ## License

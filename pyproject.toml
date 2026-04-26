@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "A terminal-based application for tracking and analyzing financial funds, providing users with real-time data and insights to make informed investment decisions."
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = ["akshare>=1.18.57", "pyyaml>=6.0.3", "textual>=8.2.3"]
+dependencies = ["akshare>=1.18.57", "pyyaml>=6.0.3", "textual>=8.2.4"]
 
 [project.scripts]
 funda = "funda.main:main"

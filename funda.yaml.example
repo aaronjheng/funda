@@ -1,0 +1,20 @@
+# 基金估值配置
+
+# 基金分组配置
+groups:
+  - name: "全部"
+    funds: []
+  - name: "其它"
+    funds:
+      - code: "110003"
+        alias: "易方达上证50指数增强A"
+      - code: "006009"
+        alias: "国融融银灵活配置混合A"
+
+# 刷新间隔（秒）
+refresh_interval: 60
+
+# 预警设置
+alerts:
+  # 单日涨跌幅度超过此值时高亮显示
+  highlight_threshold: 2.0  # 百分比

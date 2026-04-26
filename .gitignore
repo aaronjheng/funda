@@ -10,7 +10,7 @@ wheels/
 .venv
 
 # Configuration files (user-specific)
-config.yaml
+funda.yaml
 *.local.yaml
 *.local.yml
 

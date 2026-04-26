@@ -6,7 +6,7 @@ A terminal UI tool for tracking and viewing fund valuation data, built with Pyth
 
 See [funda.example.yaml](contrib/funda.example.yaml) for reference.
 
-Config file search order:
+### Config File Search Order
 
 1. `./funda.yaml` (current working directory)
 2. `$XDG_CONFIG_HOME/funda/funda.yaml` (defaults to `~/.config/funda/funda.yaml`)

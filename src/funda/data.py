@@ -39,7 +39,7 @@ def _load_cache():
 
         if not _should_refresh_cache(timestamp):
             return cache_data["data"], timestamp
-    except (json.JSONDecodeError, KeyError, ValueError):
+    except json.JSONDecodeError, KeyError, ValueError:
         pass
 
     return None, None
@@ -329,7 +329,7 @@ def get_realtime_estimate(code: str) -> tuple[float, str]:
                             estimate = latest_price * (1 + growth_pct / 100)
                             update_time = datetime.now().strftime("%H:%M:%S")
                             return estimate, update_time
-                        except (ValueError, AttributeError):
+                        except ValueError, AttributeError:
                             pass
                     update_time = datetime.now().strftime("%H:%M:%S")
                     return latest_price, update_time

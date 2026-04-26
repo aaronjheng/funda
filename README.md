@@ -4,6 +4,8 @@ A terminal UI tool for tracking and viewing fund valuation data, built with Pyth
 
 ## Config
 
+See [funda.example.yaml](contrib/funda.example.yaml) for reference.
+
 Config file search order:
 
 1. `./funda.yaml` (current working directory)

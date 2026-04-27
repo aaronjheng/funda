@@ -313,7 +313,9 @@ class FundaApp(App):
 
             # Group selector
             groups = self._get_groups()
-            group_options = [(g["name"], g["name"]) for g in groups]
+            group_options = [
+                (f"{g['name']} ({len(g.get('funds', []))})", g["name"]) for g in groups
+            ]
 
             with Horizontal(classes="group-selector"):
                 yield Select(

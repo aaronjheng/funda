@@ -79,6 +79,7 @@ class FundCard(Static):
             yield Label(
                 f"{self.alias or self.fund_code} ({self.fund_code})",
                 classes="fund-title",
+                id=f"title-{self.fund_code}",
             )
 
             with Horizontal(classes="info-row"):
@@ -98,6 +99,10 @@ class FundCard(Static):
         """Update UI when fund data changes"""
         if data is None:
             return
+
+        display_name = self.alias or data.name or self.fund_code
+        title_label = self.query_one(f"#title-{self.fund_code}", Label)
+        title_label.update(f"{display_name} ({self.fund_code})")
 
         # Determine if NAV is up-to-date (matches latest trading day)
         last_trading_day = get_last_trading_date(datetime.now()).date()

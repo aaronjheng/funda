@@ -224,22 +224,20 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
             row = cached_data_dict.get(code)
             if row:
                 fund.name = str(row.get("基金简称", alias or code))
-                # Get all NAV columns (sorted by date in column name)
-                nav_cols = sorted([key for key in row if "单位净值" in key])
+                nav_cols = sorted(
+                    key for key in row if "单位净值" in key and row.get(key)
+                )
                 if nav_cols:
-                    nav_col = nav_cols[-1]  # Latest NAV
+                    nav_col = nav_cols[-1]
                     fund.nav = float(row.get(nav_col, 0) or 0)
-                    # Try to get previous NAV
                     if len(nav_cols) >= 2:
                         prev_nav_col = nav_cols[-2]
                         fund.prev_nav = float(row.get(prev_nav_col, 0) or 0)
 
-                    # Calculate daily change
                     fund.day_change = fund.nav - fund.prev_nav
 
                     acc_nav_col = nav_col.replace("单位", "累计")
                     fund.acc_nav = float(row.get(acc_nav_col, 0) or 0)
-                    # Extract date from column name like "2026-04-17-net-value"
                     if "-" in nav_col:
                         parts = nav_col.split("-")
                         fund.nav_date = (
@@ -247,6 +245,20 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
                         )
                     else:
                         fund.nav_date = today.strftime("%Y-%m-%d")
+
+                if fund.prev_nav == 0 and fund.nav > 0:
+                    try:
+                        import akshare as ak
+
+                        hist_df = ak.fund_open_fund_info_em(
+                            symbol=code, indicator="单位净值走势"
+                        )
+                        if hist_df is not None and len(hist_df) >= 2:
+                            fund.prev_nav = float(hist_df.iloc[-2]["单位净值"])
+                            fund.day_change = fund.nav - fund.prev_nav
+                    except Exception:
+                        pass
+
                 return fund
     except Exception:
         pass

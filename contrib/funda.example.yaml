@@ -2,8 +2,6 @@
 
 # 基金分组配置
 groups:
-  - name: "全部"
-    funds: []
   - name: "其它"
     funds:
       - code: "110003"

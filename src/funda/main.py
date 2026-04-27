@@ -290,31 +290,20 @@ class FundaApp(App):
         self.refresh_task = None
         self.current_group = "全部"
 
-    def _get_all_groups_with_all(self) -> list[dict]:
-        """Get all groups with '全部' as first item"""
+    def _get_groups(self) -> list[dict]:
+        """Get groups with virtual '全部' group as first item"""
         groups = self.config.get("groups", [])
 
-        # Collect all unique funds from all groups (skip "All" group itself)
         all_funds = []
         seen_codes = set()
         for group in groups:
-            if group["name"] == "全部":
-                continue
             for fund in group.get("funds", []):
                 code = fund.get("code")
                 if code and code not in seen_codes:
                     all_funds.append(fund)
                     seen_codes.add(code)
 
-        # Update or create 'All' group with all funds
-        result = []
-        for group in groups:
-            if group["name"] == "全部":
-                result.append({"name": "全部", "funds": all_funds})
-            else:
-                result.append(group)
-
-        return result
+        return [{"name": "全部", "funds": all_funds}] + groups
 
     def compose(self) -> ComposeResult:
         with Container(classes="main-container"):
@@ -323,8 +312,8 @@ class FundaApp(App):
             yield Label(f"📅 {current_date}", classes="date-display")
 
             # Group selector
-            groups_with_all = self._get_all_groups_with_all()
-            group_options = [(g["name"], g["name"]) for g in groups_with_all]
+            groups = self._get_groups()
+            group_options = [(g["name"], g["name"]) for g in groups]
 
             with Horizontal(classes="group-selector"):
                 yield Select(
@@ -337,7 +326,7 @@ class FundaApp(App):
 
             with Grid(classes="fund-grid", id="fund-grid"):
                 # Initial load with "All" group
-                all_funds = groups_with_all[0].get("funds", [])
+                all_funds = groups[0].get("funds", [])
 
                 for fund_config in all_funds:
                     card = FundCard(
@@ -365,9 +354,9 @@ class FundaApp(App):
         self.fund_cards.clear()
 
         # Get funds for selected group (including auto-generated "All")
-        groups_with_all = self._get_all_groups_with_all()
+        groups = self._get_groups()
         selected_funds = []
-        for g in groups_with_all:
+        for g in groups:
             if g["name"] == self.current_group:
                 selected_funds = g.get("funds", [])
                 break

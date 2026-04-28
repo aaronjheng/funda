@@ -15,6 +15,12 @@ CACHE_DURATION = 43200  # Cache for 12 hours (43200 seconds) - ensures data refr
 # Memory cache for fast access
 _memory_cache = None
 _memory_cache_timestamp = None
+_memory_cache_dict = None
+
+# ETF data cache
+_etf_cache = None
+_etf_cache_timestamp = None
+ETF_CACHE_DURATION = 60  # ETF real-time data caches for 60 seconds
 
 
 def _get_cache_dir() -> Path:
@@ -39,7 +45,7 @@ def _load_cache():
 
         if not _should_refresh_cache(timestamp):
             return cache_data["data"], timestamp
-    except json.JSONDecodeError, KeyError, ValueError:
+    except (json.JSONDecodeError, KeyError, ValueError):
         pass
 
     return None, None
@@ -63,7 +69,7 @@ def _save_cache(data):
 
 def _get_cached_fund_data():
     """Get cached fund data or fetch new data if cache expired"""
-    global _memory_cache, _memory_cache_timestamp
+    global _memory_cache, _memory_cache_timestamp, _memory_cache_dict
 
     if (
         _memory_cache is not None
@@ -77,14 +83,52 @@ def _get_cached_fund_data():
         print("Loaded data from disk cache")
         _memory_cache = cached_data
         _memory_cache_timestamp = timestamp
+        _memory_cache_dict = None
         return cached_data
+
+    return None
+
+
+def _get_fund_data_dict(cached_data: list) -> dict:
+    """Get or build the lookup dict for cached fund data"""
+    global _memory_cache_dict
+    if _memory_cache_dict is not None:
+        return _memory_cache_dict
+    _memory_cache_dict = {
+        row.get("基金代码"): row for row in cached_data if row.get("基金代码")
+    }
+    return _memory_cache_dict
+
+
+def _get_etf_data():
+    """Get ETF data with short-term memory cache"""
+    global _etf_cache, _etf_cache_timestamp
+
+    now = datetime.now()
+    if (
+        _etf_cache is not None
+        and _etf_cache_timestamp is not None
+        and (now - _etf_cache_timestamp).total_seconds() < ETF_CACHE_DURATION
+    ):
+        return _etf_cache
+
+    try:
+        import akshare as ak
+
+        df = ak.fund_etf_category_sina(symbol="ETF基金")
+        if df is not None and not df.empty:
+            _etf_cache = df
+            _etf_cache_timestamp = now
+            return df
+    except Exception:
+        pass
 
     return None
 
 
 def _fetch_and_cache_fund_data():
     """Fetch new fund data from API and cache it"""
-    global _memory_cache, _memory_cache_timestamp
+    global _memory_cache, _memory_cache_timestamp, _memory_cache_dict
 
     try:
         import akshare as ak
@@ -96,6 +140,7 @@ def _fetch_and_cache_fund_data():
             _save_cache(data_dict)
             _memory_cache = data_dict
             _memory_cache_timestamp = datetime.now()
+            _memory_cache_dict = None
             print(f"Fetched and cached {len(data_dict)} funds")
             return data_dict
     except Exception as e:
@@ -217,10 +262,7 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
             cached_data = _fetch_and_cache_fund_data()
 
         if cached_data is not None:
-            # Build a dict for O(1) lookup instead of O(n) linear search
-            cached_data_dict = {
-                row.get("基金代码"): row for row in cached_data if row.get("基金代码")
-            }
+            cached_data_dict = _get_fund_data_dict(cached_data)
             row = cached_data_dict.get(code)
             if row:
                 fund.name = str(row.get("基金简称", alias or code))
@@ -265,9 +307,7 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
 
     # Fallback to ETF data source for ETF funds
     try:
-        import akshare as ak
-
-        df = ak.fund_etf_category_sina(symbol="ETF基金")
+        df = _get_etf_data()
         if df is not None and not df.empty:
             for prefix in ["sz", "sh"]:
                 sina_code = f"{prefix}{code}"
@@ -301,10 +341,8 @@ def get_realtime_estimate(code: str) -> tuple[float, str]:
         (estimate_nav, update_time)
     """
     try:
-        import akshare as ak
-
         # Try ETF first (real-time data available)
-        df = ak.fund_etf_category_sina(symbol="ETF基金")
+        df = _get_etf_data()
         if df is not None and not df.empty:
             for prefix in ["sz", "sh"]:
                 sina_code = f"{prefix}{code}"
@@ -324,9 +362,7 @@ def get_realtime_estimate(code: str) -> tuple[float, str]:
             cached_data = _fetch_and_cache_fund_data()
 
         if cached_data is not None:
-            cached_data_dict = {
-                row.get("基金代码"): row for row in cached_data if row.get("基金代码")
-            }
+            cached_data_dict = _get_fund_data_dict(cached_data)
             row = cached_data_dict.get(code)
             if row:
                 nav_cols = sorted([key for key in row if "单位净值" in key])
@@ -341,7 +377,7 @@ def get_realtime_estimate(code: str) -> tuple[float, str]:
                             estimate = latest_price * (1 + growth_pct / 100)
                             update_time = datetime.now().strftime("%H:%M:%S")
                             return estimate, update_time
-                        except ValueError, AttributeError:
+                        except (ValueError, AttributeError):
                             pass
                     update_time = datetime.now().strftime("%H:%M:%S")
                     return latest_price, update_time
@@ -397,9 +433,7 @@ def search_fund(keyword: str) -> list[dict]:
 
     # Fallback to ETF data source
     try:
-        import akshare as ak
-
-        df = ak.fund_etf_category_sina(symbol="ETF基金")
+        df = _get_etf_data()
         if df is not None and not df.empty:
             df["基金代码"] = df["代码"].str.extract(r"(\d+)")
 

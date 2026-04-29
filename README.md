@@ -11,7 +11,7 @@ See [funda.example.yaml](contrib/funda.example.yaml) for reference.
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `groups` | `list[object]` | No | Fund groups shown in the group selector. Default: `[{"name": "All", "funds": []}]`. |
-| `groups[].name` | `string` | Yes | Group name (for example `All`, `指数基金`). |
+| `groups[].name` | `string` | Yes | Group name (for example `All`, `Teach`). |
 | `groups[].funds` | `list[object]` | No | Funds under this group. Default: `[]`. |
 | `groups[].funds[].code` | `string` | Yes | Fund code, for example `110003`. |
 | `groups[].funds[].alias` | `string` | No | Display name override in UI. If omitted, fund code is shown. |

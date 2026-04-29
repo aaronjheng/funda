@@ -209,7 +209,7 @@ class FundaApp(App):
 
     .fund-card {
         padding: 0 1;
-        border: solid $primary;
+        border: solid $primary-darken-2;
         height: auto;
     }
 

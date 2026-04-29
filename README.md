@@ -10,8 +10,8 @@ See [funda.example.yaml](contrib/funda.example.yaml) for reference.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `groups` | `list[object]` | No | Fund groups shown in the group selector. Default: `[{"name": "全部", "funds": []}]`. |
-| `groups[].name` | `string` | Yes | Group name (for example `全部`, `指数基金`). |
+| `groups` | `list[object]` | No | Fund groups shown in the group selector. Default: `[{"name": "All", "funds": []}]`. |
+| `groups[].name` | `string` | Yes | Group name (for example `All`, `指数基金`). |
 | `groups[].funds` | `list[object]` | No | Funds under this group. Default: `[]`. |
 | `groups[].funds[].code` | `string` | Yes | Fund code, for example `110003`. |
 | `groups[].funds[].alias` | `string` | No | Display name override in UI. If omitted, fund code is shown. |
@@ -21,7 +21,7 @@ See [funda.example.yaml](contrib/funda.example.yaml) for reference.
 
 Notes:
 
-- `全部` is treated specially: the app auto-builds its `funds` from all non-`全部` groups.
+- `All` is treated specially: the app auto-builds its `funds` from all non-`All` groups.
 - Unknown fields are ignored.
 - `alerts.highlight_threshold` is currently a reserved field and is not yet applied in UI logic.
 

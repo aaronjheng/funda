@@ -73,7 +73,7 @@ class FundaApp(App):
         self.config = load_config()
         self.fund_cards: list[FundCard] = []
         self.refresh_task = None
-        self.current_group = "全部"
+        self.current_group = "All"
 
     def _get_groups(self) -> list[dict]:
         groups = self.config.get("groups", [])
@@ -87,7 +87,7 @@ class FundaApp(App):
                     all_funds.append(fund)
                     seen_codes.add(code)
 
-        return [{"name": "全部", "funds": all_funds}] + groups
+        return [{"name": "All", "funds": all_funds}] + groups
 
     def compose(self) -> ComposeResult:
         with Container(classes="main-container"):
@@ -102,7 +102,7 @@ class FundaApp(App):
             with Horizontal(classes="group-selector"):
                 yield Select(
                     options=group_options,
-                    value="全部",
+                    value="All",
                     classes="group-select",
                     id="group-select",
                     allow_blank=False,

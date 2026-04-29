@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 DEFAULT_CONFIG = {
-    "groups": [{"name": "全部", "funds": []}],
+    "groups": [{"name": "All", "funds": []}],
     "refresh_interval": 60,
     "alerts": {"highlight_threshold": 2.0},
 }

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 from textual.app import App, ComposeResult
-from textual.containers import Container, Grid, Horizontal
+from textual.containers import Container, Grid, Horizontal, VerticalScroll
 from textual.reactive import reactive
 from textual.widgets import Label, Select, Static
 
@@ -193,11 +193,18 @@ class FundaApp(App):
         background: $surface;
     }
 
-    .fund-grid {
+    .fund-scroll {
         width: 100%;
         height: 1fr;
+        scrollbar-size: 1 1;
+    }
+
+    .fund-grid {
+        width: 100%;
+        height: auto;
         grid-size: 2;
-        grid-gutter: 1;
+        grid-gutter: 0 1;
+        grid-rows: auto;
     }
 
     .fund-card {
@@ -326,17 +333,18 @@ class FundaApp(App):
                     allow_blank=False,
                 )
 
-            with Grid(classes="fund-grid", id="fund-grid"):
-                # Initial load with "All" group
-                all_funds = groups[0].get("funds", [])
+            with VerticalScroll(classes="fund-scroll", id="fund-scroll"):  # noqa: SIM117
+                with Grid(classes="fund-grid", id="fund-grid"):
+                    # Initial load with "All" group
+                    all_funds = groups[0].get("funds", [])
 
-                for fund_config in all_funds:
-                    card = FundCard(
-                        fund_code=fund_config["code"],
-                        alias=fund_config.get("alias", ""),
-                    )
-                    self.fund_cards.append(card)
-                    yield card
+                    for fund_config in all_funds:
+                        card = FundCard(
+                            fund_code=fund_config["code"],
+                            alias=fund_config.get("alias", ""),
+                        )
+                        self.fund_cards.append(card)
+                        yield card
 
             yield Label("Press 'r' refresh | 'q' quit", classes="footer")
 

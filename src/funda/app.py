@@ -6,7 +6,7 @@ from textual.containers import Container, Grid, Horizontal, VerticalScroll
 from textual.widgets import Label, Select
 
 from funda.config import load_config
-from funda.data import get_fund_data, get_realtime_estimate
+from funda.data import get_fund_data_full
 from funda.widget import FundCard
 
 
@@ -150,25 +150,20 @@ class FundaApp(App):
 
         asyncio.create_task(self.refresh_all_data())
 
+    async def _refresh_card(self, card: FundCard) -> None:
+        loop = asyncio.get_running_loop()
+        data = await loop.run_in_executor(
+            None, get_fund_data_full, card.fund_code, card.alias
+        )
+        if data:
+            card.fund_data = data
+
     async def refresh_all_data(self) -> None:
-        for card in self.fund_cards:
-            try:
-                loop = asyncio.get_running_loop()
-                data = await loop.run_in_executor(
-                    None, get_fund_data, card.fund_code, card.alias
-                )
-
-                if data:
-                    estimate, update_time = await loop.run_in_executor(
-                        None, get_realtime_estimate, card.fund_code
-                    )
-                    if estimate > 0:
-                        data.estimate_nav = estimate
-                        data.estimate_time = update_time
-
-                    card.fund_data = data
-            except Exception as e:
-                print(f"Failed to refresh fund {card.fund_code}: {e}")
+        tasks = [self._refresh_card(card) for card in self.fund_cards]
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def action_refresh(self) -> None:
         await self.refresh_all_data()
+
+    def on_mount(self) -> None:
+        asyncio.create_task(self.refresh_all_data())

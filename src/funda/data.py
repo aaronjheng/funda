@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,6 +22,9 @@ _memory_cache_dict = None
 _etf_cache = None
 _etf_cache_timestamp = None
 ETF_CACHE_DURATION = 60  # ETF real-time data caches for 60 seconds
+
+_fund_cache_lock = threading.Lock()
+_etf_cache_lock = threading.Lock()
 
 
 def _get_cache_dir() -> Path:
@@ -112,41 +116,58 @@ def _get_etf_data():
     ):
         return _etf_cache
 
-    try:
-        import akshare as ak
+    with _etf_cache_lock:
+        now = datetime.now()
+        if (
+            _etf_cache is not None
+            and _etf_cache_timestamp is not None
+            and (now - _etf_cache_timestamp).total_seconds() < ETF_CACHE_DURATION
+        ):
+            return _etf_cache
 
-        df = ak.fund_etf_category_sina(symbol="ETF基金")
-        if df is not None and not df.empty:
-            _etf_cache = df
-            _etf_cache_timestamp = now
-            return df
-    except Exception:
-        pass
+        try:
+            import akshare as ak
 
-    return None
+            df = ak.fund_etf_category_sina(symbol="ETF基金")
+            if df is not None and not df.empty:
+                _etf_cache = df
+                _etf_cache_timestamp = now
+                return df
+        except Exception:
+            pass
+
+        return None
 
 
 def _fetch_and_cache_fund_data():
     """Fetch new fund data from API and cache it"""
     global _memory_cache, _memory_cache_timestamp, _memory_cache_dict
 
-    try:
-        import akshare as ak
+    with _fund_cache_lock:
+        if (
+            _memory_cache is not None
+            and _memory_cache_timestamp is not None
+            and not _should_refresh_cache(_memory_cache_timestamp)
+        ):
+            return _memory_cache
 
-        print("Fetching data from AKShare API...")
-        df = ak.fund_open_fund_daily_em()
-        if df is not None and not df.empty:
-            data_dict = df.to_dict(orient="records")
-            _save_cache(data_dict)
-            _memory_cache = data_dict
-            _memory_cache_timestamp = datetime.now()
-            _memory_cache_dict = None
-            print(f"Fetched and cached {len(data_dict)} funds")
-            return data_dict
-    except Exception as e:
-        print(f"Failed to fetch data: {e}")
+        try:
+            import akshare as ak
 
-    return None
+            print("Fetching data from AKShare API...")
+            df = ak.fund_open_fund_daily_em()
+            if df is not None and not df.empty:
+                data_dict = df.to_dict(orient="records")
+                _save_cache(data_dict)
+                _memory_cache = data_dict
+                _memory_cache_timestamp = datetime.now()
+                _memory_cache_dict = None
+                print(f"Fetched and cached {len(data_dict)} funds")
+                return data_dict
+        except Exception as e:
+            print(f"Failed to fetch data: {e}")
+
+        return None
 
 
 @dataclass
@@ -325,6 +346,58 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
     except Exception:
         pass
 
+    return fund
+
+
+def _compute_realtime_estimate(code: str, fund: FundData) -> tuple[float, str]:
+    try:
+        df = _get_etf_data()
+        if df is not None and not df.empty:
+            for prefix in ["sz", "sh"]:
+                sina_code = f"{prefix}{code}"
+                row = df[df["代码"] == sina_code]
+                if not row.empty:
+                    latest_price = float(row.iloc[0].get("最新价", 0) or 0)
+                    update_time = datetime.now().strftime("%H:%M:%S")
+                    return latest_price, update_time
+    except Exception:
+        pass
+
+    try:
+        cached_data = _get_cached_fund_data()
+        if cached_data is None:
+            cached_data = _fetch_and_cache_fund_data()
+        if cached_data is not None:
+            cached_data_dict = _get_fund_data_dict(cached_data)
+            row = cached_data_dict.get(code)
+            if row:
+                nav_cols = sorted([key for key in row if "单位净值" in key])
+                if nav_cols:
+                    nav_col = nav_cols[-1]
+                    latest_price = float(row.get(nav_col, 0) or 0)
+                    daily_growth_rate = row.get("日增长率", 0)
+                    if daily_growth_rate:
+                        try:
+                            growth_pct = float(daily_growth_rate.strip("%"))
+                            estimate = latest_price * (1 + growth_pct / 100)
+                            update_time = datetime.now().strftime("%H:%M:%S")
+                            return estimate, update_time
+                        except ValueError, AttributeError:
+                            pass
+                    update_time = datetime.now().strftime("%H:%M:%S")
+                    return latest_price, update_time
+    except Exception:
+        pass
+
+    return 0.0, ""
+
+
+def get_fund_data_full(code: str, alias: str = "") -> FundData:
+    fund = get_fund_data(code, alias)
+    estimate, update_time = _compute_realtime_estimate(code, fund)
+    if estimate > 0:
+        fund.estimate_nav = estimate
+        fund.estimate_time = update_time
     return fund
 
 

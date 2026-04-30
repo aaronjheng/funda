@@ -26,6 +26,8 @@ ETF_CACHE_DURATION = 60  # ETF real-time data caches for 60 seconds
 _fund_cache_lock = threading.Lock()
 _etf_cache_lock = threading.Lock()
 
+_etf_dict = None
+
 
 def _get_cache_dir() -> Path:
     """Get or create cache directory following XDG spec"""
@@ -106,7 +108,7 @@ def _get_fund_data_dict(cached_data: list) -> dict:
 
 def _get_etf_data():
     """Get ETF data with short-term memory cache"""
-    global _etf_cache, _etf_cache_timestamp
+    global _etf_cache, _etf_cache_timestamp, _etf_dict
 
     now = datetime.now()
     if (
@@ -132,11 +134,24 @@ def _get_etf_data():
             if df is not None and not df.empty:
                 _etf_cache = df
                 _etf_cache_timestamp = now
+                _etf_dict = None
                 return df
         except Exception:
             pass
 
         return None
+
+
+def _get_etf_dict() -> dict:
+    """Get or build the lookup dict for ETF data"""
+    global _etf_dict
+    if _etf_dict is not None:
+        return _etf_dict
+    df = _get_etf_data()
+    if df is None or df.empty:
+        return {}
+    _etf_dict = {row["代码"]: row for _, row in df.iterrows() if row.get("代码")}
+    return _etf_dict
 
 
 def _fetch_and_cache_fund_data():
@@ -297,7 +312,7 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
                         prev_nav_col = nav_cols[-2]
                         fund.prev_nav = float(row.get(prev_nav_col, 0) or 0)
 
-                    fund.day_change = fund.nav - fund.prev_nav
+                    fund.day_change = fund.nav - fund.prev_nav if fund.prev_nav else 0.0
 
                     acc_nav_col = nav_col.replace("单位", "累计")
                     fund.acc_nav = float(row.get(acc_nav_col, 0) or 0)
@@ -349,115 +364,139 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
     return fund
 
 
-def _compute_realtime_estimate(code: str, fund: FundData) -> tuple[float, str]:
-    try:
-        df = _get_etf_data()
-        if df is not None and not df.empty:
-            for prefix in ["sz", "sh"]:
-                sina_code = f"{prefix}{code}"
-                row = df[df["代码"] == sina_code]
-                if not row.empty:
-                    latest_price = float(row.iloc[0].get("最新价", 0) or 0)
-                    update_time = datetime.now().strftime("%H:%M:%S")
-                    return latest_price, update_time
-    except Exception:
-        pass
+def _lookup_etf_estimate(code: str) -> tuple[float, str]:
+    etf_dict = _get_etf_dict()
+    for prefix in ["sz", "sh"]:
+        row = etf_dict.get(f"{prefix}{code}")
+        if row is not None:
+            latest_price = float(row.get("最新价", 0) or 0)
+            update_time = datetime.now().strftime("%H:%M:%S")
+            return latest_price, update_time
+    return 0.0, ""
+
+
+def _lookup_cached_estimate(code: str) -> tuple[float, str]:
+    cached_data = _get_cached_fund_data()
+    if cached_data is None:
+        cached_data = _fetch_and_cache_fund_data()
+    if cached_data is None:
+        return 0.0, ""
+    cached_data_dict = _get_fund_data_dict(cached_data)
+    row = cached_data_dict.get(code)
+    if not row:
+        return 0.0, ""
+    nav_cols = sorted([key for key in row if "单位净值" in key])
+    if not nav_cols:
+        return 0.0, ""
+    nav_col = nav_cols[-1]
+    latest_price = float(row.get(nav_col, 0) or 0)
+    daily_growth_rate = row.get("日增长率", 0)
+    if daily_growth_rate:
+        try:
+            growth_pct = float(daily_growth_rate.strip("%"))
+            estimate = latest_price * (1 + growth_pct / 100)
+            update_time = datetime.now().strftime("%H:%M:%S")
+            return estimate, update_time
+        except ValueError, AttributeError:
+            pass
+    update_time = datetime.now().strftime("%H:%M:%S")
+    return latest_price, update_time
+
+
+def get_fund_data_full(code: str, alias: str = "") -> FundData:
+    fund = FundData(code=code, alias=alias)
+    today = datetime.now()
 
     try:
         cached_data = _get_cached_fund_data()
         if cached_data is None:
             cached_data = _fetch_and_cache_fund_data()
+
         if cached_data is not None:
             cached_data_dict = _get_fund_data_dict(cached_data)
             row = cached_data_dict.get(code)
             if row:
-                nav_cols = sorted([key for key in row if "单位净值" in key])
+                fund.name = str(row.get("基金简称", alias or code))
+                nav_cols = sorted(
+                    key for key in row if "单位净值" in key and row.get(key)
+                )
                 if nav_cols:
                     nav_col = nav_cols[-1]
-                    latest_price = float(row.get(nav_col, 0) or 0)
-                    daily_growth_rate = row.get("日增长率", 0)
-                    if daily_growth_rate:
-                        try:
-                            growth_pct = float(daily_growth_rate.strip("%"))
-                            estimate = latest_price * (1 + growth_pct / 100)
-                            update_time = datetime.now().strftime("%H:%M:%S")
-                            return estimate, update_time
-                        except ValueError, AttributeError:
-                            pass
-                    update_time = datetime.now().strftime("%H:%M:%S")
-                    return latest_price, update_time
+                    fund.nav = float(row.get(nav_col, 0) or 0)
+                    if len(nav_cols) >= 2:
+                        prev_nav_col = nav_cols[-2]
+                        fund.prev_nav = float(row.get(prev_nav_col, 0) or 0)
+
+                    fund.day_change = fund.nav - fund.prev_nav if fund.prev_nav else 0.0
+
+                    acc_nav_col = nav_col.replace("单位", "累计")
+                    fund.acc_nav = float(row.get(acc_nav_col, 0) or 0)
+                    if "-" in nav_col:
+                        parts = nav_col.split("-")
+                        fund.nav_date = (
+                            "-".join(parts[:3]) if len(parts) >= 3 else parts[0]
+                        )
+                    else:
+                        fund.nav_date = today.strftime("%Y-%m-%d")
+
+                if fund.nav > 0:
+                    estimate, update_time = _lookup_etf_estimate(code)
+                    if estimate > 0:
+                        fund.estimate_nav = estimate
+                        fund.estimate_time = update_time
+                    else:
+                        estimate, update_time = _lookup_cached_estimate(code)
+                        if estimate > 0:
+                            fund.estimate_nav = estimate
+                            fund.estimate_time = update_time
+                    return fund
     except Exception:
         pass
 
-    return 0.0, ""
+    try:
+        etf_dict = _get_etf_dict()
+        for prefix in ["sz", "sh"]:
+            row = etf_dict.get(f"{prefix}{code}")
+            if row is not None:
+                fund.name = str(row.get("名称", alias or code))
+                fund.estimate_nav = float(row.get("最新价", 0) or 0)
+                fund.nav = fund.estimate_nav
+                prev_close = float(row.get("昨收", 0) or 0)
+                if prev_close > 0 and fund.estimate_nav > 0:
+                    fund.day_change = fund.estimate_nav - prev_close
+                fund.nav_date = today.strftime("%Y-%m-%d")
+                fund.estimate_time = datetime.now().strftime("%H:%M:%S")
+                return fund
+    except Exception:
+        pass
 
-
-def get_fund_data_full(code: str, alias: str = "") -> FundData:
-    fund = get_fund_data(code, alias)
-    estimate, update_time = _compute_realtime_estimate(code, fund)
-    if estimate > 0:
-        fund.estimate_nav = estimate
-        fund.estimate_time = update_time
     return fund
 
 
 def get_realtime_estimate(code: str) -> tuple[float, str]:
-    """Get fund real-time estimate data
+    estimate, update_time = _lookup_etf_estimate(code)
+    if estimate > 0:
+        return estimate, update_time
+    return _lookup_cached_estimate(code)
 
-    For ETF funds, returns real-time price.
-    For regular funds, returns daily growth rate estimate.
 
-    Args:
-        code: Fund code
-
-    Returns:
-        (estimate_nav, update_time)
-    """
+def fetch_prev_nav(fund: FundData) -> FundData:
+    if fund.prev_nav != 0 or fund.nav == 0:
+        return fund
     try:
-        # Try ETF first (real-time data available)
-        df = _get_etf_data()
-        if df is not None and not df.empty:
-            for prefix in ["sz", "sh"]:
-                sina_code = f"{prefix}{code}"
-                row = df[df["代码"] == sina_code]
-                if not row.empty:
-                    latest_price = float(row.iloc[0].get("最新价", 0) or 0)
-                    update_time = datetime.now().strftime("%H:%M:%S")
-                    return latest_price, update_time
+        import akshare as ak
+
+        hist_df = ak.fund_open_fund_info_em(symbol=fund.code, indicator="单位净值走势")
+        if hist_df is not None and len(hist_df) >= 2:
+            import copy
+
+            updated = copy.copy(fund)
+            updated.prev_nav = float(hist_df.iloc[-2]["单位净值"])
+            updated.day_change = updated.nav - updated.prev_nav
+            return updated
     except Exception:
         pass
-
-    # Fallback to cached data for non-ETF funds
-    try:
-        cached_data = _get_cached_fund_data()
-
-        if cached_data is None:
-            cached_data = _fetch_and_cache_fund_data()
-
-        if cached_data is not None:
-            cached_data_dict = _get_fund_data_dict(cached_data)
-            row = cached_data_dict.get(code)
-            if row:
-                nav_cols = sorted([key for key in row if "单位净值" in key])
-                if nav_cols:
-                    nav_col = nav_cols[-1]
-                    latest_price = float(row.get(nav_col, 0) or 0)
-                    # Use daily growth rate if available
-                    daily_growth_rate = row.get("日增长率", 0)
-                    if daily_growth_rate:
-                        try:
-                            growth_pct = float(daily_growth_rate.strip("%"))
-                            estimate = latest_price * (1 + growth_pct / 100)
-                            update_time = datetime.now().strftime("%H:%M:%S")
-                            return estimate, update_time
-                        except ValueError, AttributeError:
-                            pass
-                    update_time = datetime.now().strftime("%H:%M:%S")
-                    return latest_price, update_time
-    except Exception:
-        pass
-
-    return 0.0, ""
+    return fund
 
 
 def search_fund(keyword: str) -> list[dict]:

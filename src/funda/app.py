@@ -6,7 +6,7 @@ from textual.containers import Container, Grid, Horizontal, VerticalScroll
 from textual.widgets import Label, Select
 
 from funda.config import load_config
-from funda.data import get_fund_data_full
+from funda.data import FundData, fetch_prev_nav, get_fund_data_full
 from funda.widget import FundCard
 
 
@@ -157,10 +157,27 @@ class FundaApp(App):
         )
         if data:
             card.fund_data = data
+        return data
+
+    async def _fill_prev_nav(self, card: FundCard, data: FundData) -> None:
+        if data is None or data.prev_nav != 0 or data.nav == 0:
+            return
+        loop = asyncio.get_running_loop()
+        updated = await loop.run_in_executor(None, fetch_prev_nav, data)
+        if updated.prev_nav != 0:
+            card.fund_data = updated
 
     async def refresh_all_data(self) -> None:
-        tasks = [self._refresh_card(card) for card in self.fund_cards]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(
+            *[self._refresh_card(card) for card in self.fund_cards],
+            return_exceptions=True,
+        )
+        prev_nav_tasks = []
+        for card, result in zip(self.fund_cards, results, strict=True):
+            if isinstance(result, FundData):
+                prev_nav_tasks.append(self._fill_prev_nav(card, result))
+        if prev_nav_tasks:
+            await asyncio.gather(*prev_nav_tasks, return_exceptions=True)
 
     async def action_refresh(self) -> None:
         await self.refresh_all_data()

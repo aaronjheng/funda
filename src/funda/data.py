@@ -2,10 +2,13 @@
 
 import json
 import os
+import re
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import httpx
 
 # XDG cache directory
 XDG_CACHE_HOME = os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
@@ -133,8 +136,31 @@ def _get_fund_data_dict(cached_data: list) -> dict:
     return _memory_cache_dict
 
 
+def _fetch_etf_data_sina() -> list[dict] | None:
+    url = (
+        "https://vip.stock.finance.sina.com.cn/quotes_service/api/jsonp.php/"
+        "IO.XSRV2.CallbackList['da_yPT46_Ll7K6WD']/Market_Center.getHQNodeDataSimple"
+    )
+    params = {
+        "page": "1",
+        "num": "80",
+        "sort": "changepercent",
+        "asc": "0",
+        "node": "etf_hq_fund",
+        "_s_r_a": "init",
+    }
+    headers = {
+        "User-Agent": _HEADERS["User-Agent"],
+        "Referer": "https://vip.stock.finance.sina.com.cn/",
+    }
+    res = _client.get(url, params=params, headers=headers)
+    match = re.search(r"\((.*)\)", res.text, re.DOTALL)
+    if match:
+        return json.loads(match.group(1))
+    return None
+
+
 def _get_etf_data():
-    """Get ETF data with short-term memory cache"""
     global _etf_cache, _etf_cache_timestamp, _etf_dict
 
     now = datetime.now()
@@ -155,14 +181,12 @@ def _get_etf_data():
             return _etf_cache
 
         try:
-            import akshare as ak
-
-            df = ak.fund_etf_category_sina(symbol="ETF基金")
-            if df is not None and not df.empty:
-                _etf_cache = df
+            data = _fetch_etf_data_sina()
+            if data:
+                _etf_cache = data
                 _etf_cache_timestamp = now
                 _etf_dict = None
-                return df
+                return data
         except Exception:
             pass
 
@@ -170,19 +194,64 @@ def _get_etf_data():
 
 
 def _get_etf_dict() -> dict:
-    """Get or build the lookup dict for ETF data"""
     global _etf_dict
     if _etf_dict is not None:
         return _etf_dict
-    df = _get_etf_data()
-    if df is None or df.empty:
+    data = _get_etf_data()
+    if not data:
         return {}
-    _etf_dict = {row["代码"]: row for _, row in df.iterrows() if row.get("代码")}
+    _etf_dict = {row.get("symbol", ""): row for row in data if row.get("symbol")}
     return _etf_dict
 
 
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "Referer": "https://fund.eastmoney.com/",
+}
+
+_client = httpx.Client(headers=_HEADERS, timeout=30)
+
+
+def _fetch_fund_daily_em() -> list[dict] | None:
+    url = "https://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx"
+    params = {
+        "t": "1",
+        "lx": "1",
+        "letter": "",
+        "gsid": "",
+        "text": "",
+        "sort": "zdf,desc",
+        "page": "1,50000",
+        "dt": "1580914040623",
+        "atfc": "",
+        "onlySale": "0",
+    }
+    res = _client.get(url, params=params)
+    text = res.text.strip()
+    if text.startswith("var db="):
+        text = text[len("var db=") :]
+    json_str = re.sub(r"([a-zA-Z_]\w*)\s*:", r'"\1":', text)
+    json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
+    data = json.loads(json_str)
+    show_day = data["showday"]
+    rows = []
+    for item in data["datas"]:
+        rows.append(
+            {
+                "基金代码": item[0],
+                "基金简称": item[1],
+                f"{show_day[0]}-单位净值": item[3],
+                f"{show_day[0]}-累计净值": item[4],
+                f"{show_day[1]}-单位净值": item[5],
+                f"{show_day[1]}-累计净值": item[6],
+                "日增长值": item[7],
+                "日增长率": item[8],
+            }
+        )
+    return rows
+
+
 def _fetch_and_cache_fund_data():
-    """Fetch new fund data from API and cache it"""
     global _memory_cache, _memory_cache_timestamp, _memory_cache_dict
 
     with _fund_cache_lock:
@@ -194,20 +263,15 @@ def _fetch_and_cache_fund_data():
             return _memory_cache
 
         try:
-            import akshare as ak
-
-            print("Fetching data from AKShare API...")
-            df = ak.fund_open_fund_daily_em()
-            if df is not None and not df.empty:
-                data_dict = df.to_dict(orient="records")
+            data_dict = _fetch_fund_daily_em()
+            if data_dict:
                 _save_cache(data_dict)
                 _memory_cache = data_dict
                 _memory_cache_timestamp = datetime.now()
                 _memory_cache_dict = None
-                print(f"Fetched and cached {len(data_dict)} funds")
                 return data_dict
-        except Exception as e:
-            print(f"Failed to fetch data: {e}")
+        except Exception:
+            pass
 
         return None
 
@@ -353,13 +417,9 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
 
                 if fund.prev_nav == 0 and fund.nav > 0:
                     try:
-                        import akshare as ak
-
-                        hist_df = ak.fund_open_fund_info_em(
-                            symbol=code, indicator="单位净值走势"
-                        )
-                        if hist_df is not None and len(hist_df) >= 2:
-                            fund.prev_nav = float(hist_df.iloc[-2]["单位净值"])
+                        data = _fetch_fund_info_em(code)
+                        if data and len(data) >= 2:
+                            fund.prev_nav = float(data[-2]["y"])
                             fund.day_change = fund.nav - fund.prev_nav
                     except Exception:
                         pass
@@ -370,21 +430,18 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
 
     # Fallback to ETF data source for ETF funds
     try:
-        df = _get_etf_data()
-        if df is not None and not df.empty:
-            for prefix in ["sz", "sh"]:
-                sina_code = f"{prefix}{code}"
-                row = df[df["代码"] == sina_code]
-                if not row.empty:
-                    row_data = row.iloc[0]
-                    fund.name = str(row_data.get("名称", alias or code))
-                    fund.estimate_nav = float(row_data.get("最新价", 0) or 0)
-                    fund.nav = fund.estimate_nav
-                    prev_close = float(row_data.get("昨收", 0) or 0)
-                    if prev_close > 0 and fund.estimate_nav > 0:
-                        fund.day_change = fund.estimate_nav - prev_close
-                    fund.nav_date = today.strftime("%Y-%m-%d")
-                    return fund
+        etf_dict = _get_etf_dict()
+        for prefix in ["sh", "sz"]:
+            row = etf_dict.get(f"{prefix}{code}")
+            if row is not None:
+                fund.name = str(row.get("name", alias or code))
+                fund.estimate_nav = float(row.get("trade", 0) or 0)
+                fund.nav = fund.estimate_nav
+                prev_close = float(row.get("settlement", 0) or 0)
+                if prev_close > 0 and fund.estimate_nav > 0:
+                    fund.day_change = fund.estimate_nav - prev_close
+                fund.nav_date = today.strftime("%Y-%m-%d")
+                return fund
     except Exception:
         pass
 
@@ -393,10 +450,10 @@ def get_fund_data(code: str, alias: str = "") -> FundData:
 
 def _lookup_etf_estimate(code: str) -> tuple[float, str]:
     etf_dict = _get_etf_dict()
-    for prefix in ["sz", "sh"]:
+    for prefix in ["sh", "sz"]:
         row = etf_dict.get(f"{prefix}{code}")
         if row is not None:
-            latest_price = float(row.get("最新价", 0) or 0)
+            latest_price = float(row.get("trade", 0) or 0)
             update_time = datetime.now().strftime("%H:%M:%S")
             return latest_price, update_time
     return 0.0, ""
@@ -482,13 +539,13 @@ def get_fund_data_full(code: str, alias: str = "") -> FundData:
 
     try:
         etf_dict = _get_etf_dict()
-        for prefix in ["sz", "sh"]:
+        for prefix in ["sh", "sz"]:
             row = etf_dict.get(f"{prefix}{code}")
             if row is not None:
-                fund.name = str(row.get("名称", alias or code))
-                fund.estimate_nav = float(row.get("最新价", 0) or 0)
+                fund.name = str(row.get("name", alias or code))
+                fund.estimate_nav = float(row.get("trade", 0) or 0)
                 fund.nav = fund.estimate_nav
-                prev_close = float(row.get("昨收", 0) or 0)
+                prev_close = float(row.get("settlement", 0) or 0)
                 if prev_close > 0 and fund.estimate_nav > 0:
                     fund.day_change = fund.estimate_nav - prev_close
                 fund.nav_date = today.strftime("%Y-%m-%d")
@@ -507,18 +564,25 @@ def get_realtime_estimate(code: str) -> tuple[float, str]:
     return _lookup_cached_estimate(code)
 
 
+def _fetch_fund_info_em(code: str) -> list[dict] | None:
+    url = f"https://fund.eastmoney.com/pingzhongdata/{code}.js"
+    res = _client.get(url)
+    match = re.search(r"var Data_netWorthTrend\s*=\s*(\[.*?\]);", res.text, re.DOTALL)
+    if match:
+        return json.loads(match.group(1))
+    return None
+
+
 def fetch_prev_nav(fund: FundData) -> FundData:
     if fund.prev_nav != 0 or fund.nav == 0:
         return fund
     try:
-        import akshare as ak
-
-        hist_df = ak.fund_open_fund_info_em(symbol=fund.code, indicator="单位净值走势")
-        if hist_df is not None and len(hist_df) >= 2:
+        data = _fetch_fund_info_em(fund.code)
+        if data and len(data) >= 2:
             import copy
 
             updated = copy.copy(fund)
-            updated.prev_nav = float(hist_df.iloc[-2]["单位净值"])
+            updated.prev_nav = float(data[-2]["y"])
             updated.day_change = updated.nav - updated.prev_nav
             return updated
     except Exception:
@@ -572,25 +636,22 @@ def search_fund(keyword: str) -> list[dict]:
 
     # Fallback to ETF data source
     try:
-        df = _get_etf_data()
-        if df is not None and not df.empty:
-            df["基金代码"] = df["代码"].str.extract(r"(\d+)")
-
-            matched = df[
-                df["基金代码"].str.contains(keyword, na=False)
-                | df["名称"].str.contains(keyword, na=False)
-            ]
-
-            for _, row in matched.head(10).iterrows():
+        etf_dict = _get_etf_dict()
+        for _, row in etf_dict.items():
+            code_val = row.get("code", "")
+            name_val = row.get("name", "")
+            if keyword in code_val or keyword in name_val:
                 results.append(
                     {
-                        "基金代码": row["基金代码"],
-                        "基金名称": row["名称"],
-                        "最新价": row.get("最新价", ""),
-                        "涨跌幅": row.get("涨跌幅", ""),
+                        "基金代码": code_val,
+                        "基金名称": name_val,
+                        "最新价": row.get("trade", ""),
+                        "涨跌幅": row.get("changepercent", ""),
                     }
                 )
-    except Exception as e:
-        print(f"Error searching fund: {e}")
+                if len(results) >= 10:
+                    break
+    except Exception:
+        pass
 
     return results

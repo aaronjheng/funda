@@ -152,34 +152,65 @@ class FundaApp(App):
             cached.alias = card.alias
             card._pending_data = cached
 
-    async def _refresh_card(self, card: FundCard) -> None:
-        loop = asyncio.get_running_loop()
-        data = await loop.run_in_executor(
-            None, get_fund_data_full, card.fund_code, card.alias
-        )
-        if data:
-            card.fund_data = data
+    async def _fetch_card_data(
+        self, card: FundCard, semaphore: asyncio.Semaphore
+    ) -> FundData | None:
+        async with semaphore:
+            loop = asyncio.get_running_loop()
+            try:
+                data = await loop.run_in_executor(
+                    None, get_fund_data_full, card.fund_code, card.alias
+                )
+            except Exception:
+                return None
         return data
 
-    async def _fill_prev_nav(self, card: FundCard, data: FundData) -> None:
-        if data is None or data.prev_nav != 0 or data.nav == 0:
-            return
-        loop = asyncio.get_running_loop()
-        updated = await loop.run_in_executor(None, fetch_prev_nav, data)
-        if updated.prev_nav != 0:
-            card.fund_data = updated
+    async def _fetch_prev_nav_data(
+        self, data: FundData, semaphore: asyncio.Semaphore
+    ) -> FundData:
+        if data.prev_nav != 0 or data.nav == 0:
+            return data
+        async with semaphore:
+            loop = asyncio.get_running_loop()
+            try:
+                updated = await loop.run_in_executor(None, fetch_prev_nav, data)
+            except Exception:
+                return data
+        return updated if updated and updated.prev_nav != 0 else data
 
     async def refresh_all_data(self) -> None:
+        semaphore = asyncio.Semaphore(3)
         results = await asyncio.gather(
-            *[self._refresh_card(card) for card in self.fund_cards],
+            *[self._fetch_card_data(card, semaphore) for card in self.fund_cards],
             return_exceptions=True,
         )
-        prev_nav_tasks = []
+        card_data: dict[FundCard, FundData] = {}
         for card, result in zip(self.fund_cards, results, strict=True):
             if isinstance(result, FundData):
-                prev_nav_tasks.append(self._fill_prev_nav(card, result))
-        if prev_nav_tasks:
-            await asyncio.gather(*prev_nav_tasks, return_exceptions=True)
+                card_data[card] = result
+
+        needs_prev_nav = [data for data in card_data.values() if data.prev_nav == 0]
+        if needs_prev_nav:
+            prev_nav_results = await asyncio.gather(
+                *[
+                    self._fetch_prev_nav_data(data, semaphore)
+                    for data in needs_prev_nav
+                ],
+                return_exceptions=True,
+            )
+            updated_map = {}
+            for orig, result in zip(needs_prev_nav, prev_nav_results, strict=True):
+                if isinstance(result, FundData):
+                    updated_map[id(orig)] = result
+            card_data = {
+                card: updated_map.get(id(data), data)
+                for card, data in card_data.items()
+            }
+
+        with self.app.batch_update():
+            for card, data in card_data.items():
+                card.fund_data = data
+
         for card in self.fund_cards:
             if card.fund_data and card.fund_data.nav > 0:
                 save_fund_cache(card.fund_data)

@@ -1,3 +1,4 @@
+from dataclasses import fields
 from datetime import datetime
 
 from textual.app import ComposeResult
@@ -71,6 +72,8 @@ class FundCard(Static):
         self.shares = shares
         self.fund_data = None
         self._pending_data: FundData | None = None
+        self._prev_fund_data: FundData | None = None
+        self._widgets: dict[str, Label] = {}
 
     def on_mount(self) -> None:
         if self._pending_data is not None:
@@ -98,13 +101,36 @@ class FundCard(Static):
                 yield Label("实时估值:", classes="label")
                 yield Label("--", id=f"estimate-{self.fund_code}", classes="value")
 
+    def _get_widget(self, key: str) -> Label:
+        if key not in self._widgets:
+            self._widgets[key] = self.query_one(f"#{key}-{self.fund_code}", Label)
+        return self._widgets[key]
+
+    def _set_change_class(self, label: Label, pct: float) -> None:
+        cls = "positive" if pct > 0 else "negative" if pct < 0 else "neutral"
+        if not label.has_class(cls):
+            label.remove_class("positive", "negative", "neutral")
+            label.add_class(cls)
+
     def watch_fund_data(self, data: FundData | None) -> None:
         if data is None:
             return
 
-        display_name = self.alias or data.name or self.fund_code
-        title_label = self.query_one(f"#title-{self.fund_code}", Label)
-        title_label.update(f"{display_name} ({self.fund_code})")
+        old = self._prev_fund_data
+        if (
+            old is not None
+            and data is not None
+            and all(
+                getattr(data, f.name) == getattr(old, f.name) for f in fields(FundData)
+            )
+        ):
+            return
+        self._prev_fund_data = data
+
+        title_label = self._get_widget("title")
+        title_label.update(
+            f"{self.alias or data.name or self.fund_code} ({self.fund_code})"
+        )
 
         last_trading_day = get_last_trading_date(datetime.now()).date()
         nav_is_current = False
@@ -115,34 +141,22 @@ class FundCard(Static):
             except ValueError:
                 pass
 
-        nav_label = self.query_one(f"#nav-{self.fund_code}", Label)
-        if data.nav > 0:
-            nav_label.update(f"{data.nav:.4f}")
-        else:
-            nav_label.update("--")
+        nav_label = self._get_widget("nav")
+        nav_label.update(f"{data.nav:.4f}" if data.nav > 0 else "--")
 
-        change_label = self.query_one(f"#change-{self.fund_code}", Label)
+        change_label = self._get_widget("change")
         if data.nav > 0 and data.prev_nav > 0:
             change_pct = data.day_change_percent
             change_symbol = "+" if change_pct >= 0 else ""
             change_label.update(f"{change_symbol}{change_pct:.2f}%")
-            nav_label.remove_class("positive", "negative", "neutral")
-            change_label.remove_class("positive", "negative", "neutral")
-            if change_pct > 0:
-                nav_label.add_class("positive")
-                change_label.add_class("positive")
-            elif change_pct < 0:
-                nav_label.add_class("negative")
-                change_label.add_class("negative")
-            else:
-                nav_label.add_class("neutral")
-                change_label.add_class("neutral")
+            self._set_change_class(nav_label, change_pct)
+            self._set_change_class(change_label, change_pct)
         else:
             change_label.update("--")
             nav_label.remove_class("positive", "negative", "neutral")
             change_label.remove_class("positive", "negative", "neutral")
 
-        estimate_label = self.query_one(f"#estimate-{self.fund_code}", Label)
+        estimate_label = self._get_widget("estimate")
         if nav_is_current:
             estimate_label.update("")
         else:
@@ -152,18 +166,9 @@ class FundCard(Static):
                 estimate_label.update(
                     f"{data.estimate_nav:.4f} ({est_symbol}{est_pct:.2f}%)"
                 )
-                estimate_label.remove_class("positive", "negative", "neutral")
-                if est_pct > 0:
-                    estimate_label.add_class("positive")
-                elif est_pct < 0:
-                    estimate_label.add_class("negative")
-                else:
-                    estimate_label.add_class("neutral")
+                self._set_change_class(estimate_label, est_pct)
             else:
                 estimate_label.update("--")
 
-        nav_date_label = self.query_one(f"#nav-date-{self.fund_code}", Label)
-        if data.nav_date:
-            nav_date_label.update(f"({data.nav_date})")
-        else:
-            nav_date_label.update("")
+        nav_date_label = self._get_widget("nav-date")
+        nav_date_label.update(f"({data.nav_date})" if data.nav_date else "")

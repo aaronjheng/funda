@@ -6,7 +6,13 @@ from textual.containers import Container, Grid, Horizontal, VerticalScroll
 from textual.widgets import Label, Select
 
 from funda.config import load_config
-from funda.data import FundData, fetch_prev_nav, get_fund_data_full
+from funda.data import (
+    FundData,
+    fetch_prev_nav,
+    get_fund_data_full,
+    load_fund_cache,
+    save_fund_cache,
+)
 from funda.widget import FundCard
 
 
@@ -117,6 +123,7 @@ class FundaApp(App):
                             fund_code=fund_config["code"],
                             alias=fund_config.get("alias", ""),
                         )
+                        self._load_card_from_cache(card)
                         self.fund_cards.append(card)
                         yield card
 
@@ -145,10 +152,17 @@ class FundaApp(App):
                 fund_code=fund_config["code"],
                 alias=fund_config.get("alias", ""),
             )
+            self._load_card_from_cache(card)
             self.fund_cards.append(card)
             fund_grid.mount(card)
 
         asyncio.create_task(self.refresh_all_data())
+
+    def _load_card_from_cache(self, card: FundCard) -> None:
+        cached = load_fund_cache(card.fund_code)
+        if cached:
+            cached.alias = card.alias
+            card._pending_data = cached
 
     async def _refresh_card(self, card: FundCard) -> None:
         loop = asyncio.get_running_loop()
@@ -178,6 +192,9 @@ class FundaApp(App):
                 prev_nav_tasks.append(self._fill_prev_nav(card, result))
         if prev_nav_tasks:
             await asyncio.gather(*prev_nav_tasks, return_exceptions=True)
+        for card in self.fund_cards:
+            if card.fund_data and card.fund_data.nav > 0:
+                save_fund_cache(card.fund_data)
 
     async def action_refresh(self) -> None:
         await self.refresh_all_data()

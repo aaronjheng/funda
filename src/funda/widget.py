@@ -46,15 +46,15 @@ class FundCard(Static):
         margin-left: 1;
     }
 
-    FundCard .positive {
+    FundCard .value.positive {
         color: #ff6b6b;
     }
 
-    FundCard .negative {
+    FundCard .value.negative {
         color: #51cf66;
     }
 
-    FundCard .neutral {
+    FundCard .value.neutral {
         color: $text-muted;
     }
     """
@@ -70,6 +70,12 @@ class FundCard(Static):
         self.cost = cost
         self.shares = shares
         self.fund_data = None
+        self._pending_data: FundData | None = None
+
+    def on_mount(self) -> None:
+        if self._pending_data is not None:
+            self.fund_data = self._pending_data
+            self._pending_data = None
 
     def compose(self) -> ComposeResult:
         with Container(classes="fund-card"):
@@ -116,7 +122,7 @@ class FundCard(Static):
             nav_label.update("--")
 
         change_label = self.query_one(f"#change-{self.fund_code}", Label)
-        if data.nav > 0:
+        if data.nav > 0 and data.prev_nav > 0:
             change_pct = data.day_change_percent
             change_symbol = "+" if change_pct >= 0 else ""
             change_label.update(f"{change_symbol}{change_pct:.2f}%")
@@ -133,6 +139,8 @@ class FundCard(Static):
                 change_label.add_class("neutral")
         else:
             change_label.update("--")
+            nav_label.remove_class("positive", "negative", "neutral")
+            change_label.remove_class("positive", "negative", "neutral")
 
         estimate_label = self.query_one(f"#estimate-{self.fund_code}", Label)
         if nav_is_current:

@@ -36,6 +36,33 @@ def _get_cache_dir() -> Path:
     return cache_dir
 
 
+def load_fund_cache(code: str) -> FundData | None:
+    """Load cached FundData for a specific fund code"""
+    cache_file = _get_cache_dir() / "fund_data" / f"{code}.json"
+    if not cache_file.exists():
+        return None
+    try:
+        with open(cache_file, encoding="utf-8") as f:
+            data = json.load(f)
+        return FundData(**data)
+    except json.JSONDecodeError, TypeError, ValueError:
+        return None
+
+
+def save_fund_cache(data: FundData) -> None:
+    """Save FundData to disk cache for a specific fund"""
+    if data is None or data.nav == 0:
+        return
+    cache_dir = _get_cache_dir() / "fund_data"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{data.code}.json"
+    try:
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(data.__dict__, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
+
+
 def _load_cache():
     """Load cached fund data from disk"""
     cache_file = _get_cache_dir() / "fund_data_cache.json"

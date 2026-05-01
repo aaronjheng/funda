@@ -6,6 +6,11 @@ A terminal UI tool for tracking and viewing fund valuation data, built with Pyth
 
 See [funda.example.yaml](contrib/funda.example.yaml) for reference.
 
+### Config File Search Order
+
+1. `./funda.yaml` (current working directory)
+2. `$XDG_CONFIG_HOME/funda/funda.yaml` (defaults to `~/.config/funda/funda.yaml`)
+
 ### Config Fields
 
 | Field | Type | Required | Description |
@@ -24,17 +29,6 @@ Notes:
 - `All` is treated specially: the app auto-builds its `funds` from all non-`All` groups.
 - Unknown fields are ignored.
 - `alerts.highlight_threshold` is currently a reserved field and is not yet applied in UI logic.
-
-### Config File Search Order
-
-1. `./funda.yaml` (current working directory)
-2. `$XDG_CONFIG_HOME/funda/funda.yaml` (defaults to `~/.config/funda/funda.yaml`)
-
-You can bootstrap local config from the example:
-
-```bash
-cp contrib/funda.example.yaml funda.yaml
-```
 
 ## License
 

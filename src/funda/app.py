@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Grid, Horizontal, VerticalScroll
@@ -50,14 +49,6 @@ class FundaApp(App):
         text-style: dim;
     }
 
-    .date-display {
-        height: 1;
-        content-align: center middle;
-        text-style: bold;
-        color: $text;
-        margin: 1 0;
-    }
-
     .group-selector {
         height: auto;
         margin: 1 0;
@@ -97,9 +88,6 @@ class FundaApp(App):
 
     def compose(self) -> ComposeResult:
         with Container(classes="main-container"):
-            current_date = datetime.now().strftime("%Y-%m-%d %A")
-            yield Label(f"📅 {current_date}", classes="date-display")
-
             groups = self._get_groups()
             group_options = [
                 (f"{g['name']} ({len(g.get('funds', []))})", g["name"]) for g in groups

@@ -1,7 +1,12 @@
+"""Widget module for fund cards."""
+
+from __future__ import annotations
+
 from dataclasses import fields
 from datetime import datetime
+from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
-from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
 from textual.reactive import reactive
 from textual.widgets import Label, Static
@@ -11,9 +16,12 @@ from funda.data import (
     get_last_trading_date,
 )
 
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
+
 
 class FundCard(Static):
-    """Fund information card"""
+    """Fund information card."""
 
     DEFAULT_CSS = """
     FundCard .fund-card {
@@ -63,8 +71,13 @@ class FundCard(Static):
     fund_data = reactive[FundData | None](None)
 
     def __init__(
-        self, fund_code: str, alias: str = "", cost: float = 0.0, shares: float = 0.0
-    ):
+        self,
+        fund_code: str,
+        alias: str = "",
+        cost: float = 0.0,
+        shares: float = 0.0,
+    ) -> None:
+        """Initialize the fund card."""
         super().__init__()
         self.fund_code = fund_code
         self.alias = alias
@@ -75,12 +88,18 @@ class FundCard(Static):
         self._prev_fund_data: FundData | None = None
         self._widgets: dict[str, Label] = {}
 
+    def set_pending_data(self, data: FundData) -> None:
+        """Set pending fund data to be applied on mount."""
+        self._pending_data = data
+
     def on_mount(self) -> None:
+        """Apply pending data when mounted."""
         if self._pending_data is not None:
             self.fund_data = self._pending_data
             self._pending_data = None
 
     def compose(self) -> ComposeResult:
+        """Compose the card UI."""
         with Container(classes="fund-card"):
             yield Label(
                 f"{self.alias or self.fund_code} ({self.fund_code})",
@@ -113,6 +132,7 @@ class FundCard(Static):
             label.add_class(cls)
 
     def watch_fund_data(self, data: FundData | None) -> None:
+        """React to fund data changes."""
         if data is None:
             return
 
@@ -129,14 +149,23 @@ class FundCard(Static):
 
         title_label = self._get_widget("title")
         title_label.update(
-            f"{self.alias or data.name or self.fund_code} ({self.fund_code})"
+            f"{self.alias or data.name or self.fund_code} ({self.fund_code})",
         )
 
-        last_trading_day = get_last_trading_date(datetime.now()).date()
+        last_trading_day = get_last_trading_date(
+            datetime.now(tz=ZoneInfo("Asia/Shanghai")),
+        ).date()
         nav_is_current = False
         if data.nav_date:
             try:
-                nav_date = datetime.strptime(data.nav_date, "%Y-%m-%d").date()
+                nav_date = (
+                    datetime.strptime(
+                        data.nav_date,
+                        "%Y-%m-%d",
+                    )
+                    .replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+                    .date()
+                )
                 nav_is_current = nav_date >= last_trading_day
             except ValueError:
                 pass
@@ -159,16 +188,15 @@ class FundCard(Static):
         estimate_label = self._get_widget("estimate")
         if nav_is_current:
             estimate_label.update("")
+        elif data.estimate_nav > 0:
+            est_pct = data.estimate_change_percent
+            est_symbol = "+" if est_pct >= 0 else ""
+            estimate_label.update(
+                f"{data.estimate_nav:.4f} ({est_symbol}{est_pct:.2f}%)",
+            )
+            self._set_change_class(estimate_label, est_pct)
         else:
-            if data.estimate_nav > 0:
-                est_pct = data.estimate_change_percent
-                est_symbol = "+" if est_pct >= 0 else ""
-                estimate_label.update(
-                    f"{data.estimate_nav:.4f} ({est_symbol}{est_pct:.2f}%)"
-                )
-                self._set_change_class(estimate_label, est_pct)
-            else:
-                estimate_label.update("--")
+            estimate_label.update("--")
 
         nav_date_label = self._get_widget("nav-date")
         nav_date_label.update(f"({data.nav_date})" if data.nav_date else "")

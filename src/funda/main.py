@@ -1,11 +1,13 @@
-"""Funda Valuation TUI Tool
-Based on AKShare and Textual
+"""Funda Valuation TUI Tool.
+
+Based on AKShare and Textual.
 """
 
 from funda.app import FundaApp
 
 
-def main():
+def main() -> None:
+    """Run the Funda TUI application."""
     app = FundaApp()
     app.run()
 

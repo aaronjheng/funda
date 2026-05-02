@@ -1,4 +1,7 @@
+"""Funda TUI application module."""
+
 import asyncio
+from typing import ClassVar
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Grid, Horizontal, VerticalScroll
@@ -16,7 +19,7 @@ from funda.widget import FundCard
 
 
 class FundaApp(App):
-    """Funda Valuation TUI Application"""
+    """Funda Valuation TUI Application."""
 
     CSS = """
     Screen {
@@ -60,12 +63,13 @@ class FundaApp(App):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("q", "quit", "Quit"),
         ("r", "refresh", "Refresh"),
     ]
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize the app."""
         super().__init__()
         self.config = load_config()
         self.fund_cards: list[FundCard] = []
@@ -84,9 +88,10 @@ class FundaApp(App):
                     all_funds.append(fund)
                     seen_codes.add(code)
 
-        return [{"name": "All", "funds": all_funds}] + groups
+        return [{"name": "All", "funds": all_funds}, *groups]
 
     def compose(self) -> ComposeResult:
+        """Compose the UI."""
         with Container(classes="main-container"):
             groups = self._get_groups()
             group_options = [
@@ -118,6 +123,7 @@ class FundaApp(App):
             yield Label("Press 'r' refresh | 'q' quit", classes="footer")
 
     def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle group selection changes."""
         if event.select.id == "group-select":
             self.current_group = str(event.value)
             self._refresh_fund_grid()
@@ -144,29 +150,36 @@ class FundaApp(App):
             self.fund_cards.append(card)
             fund_grid.mount(card)
 
-        asyncio.create_task(self.refresh_all_data())
+        self.refresh_task = asyncio.create_task(self.refresh_all_data())
 
     def _load_card_from_cache(self, card: FundCard) -> None:
         cached = load_fund_cache(card.fund_code)
         if cached:
             cached.alias = card.alias
-            card._pending_data = cached
+            card.set_pending_data(cached)
 
     async def _fetch_card_data(
-        self, card: FundCard, semaphore: asyncio.Semaphore
+        self,
+        card: FundCard,
+        semaphore: asyncio.Semaphore,
     ) -> FundData | None:
         async with semaphore:
             loop = asyncio.get_running_loop()
             try:
                 data = await loop.run_in_executor(
-                    None, get_fund_data_full, card.fund_code, card.alias
+                    None,
+                    get_fund_data_full,
+                    card.fund_code,
+                    card.alias,
                 )
-            except Exception:
+            except OSError, ValueError, TypeError:
                 return None
         return data
 
     async def _fetch_prev_nav_data(
-        self, data: FundData, semaphore: asyncio.Semaphore
+        self,
+        data: FundData,
+        semaphore: asyncio.Semaphore,
     ) -> FundData:
         if data.prev_nav != 0 or data.nav == 0:
             return data
@@ -174,20 +187,22 @@ class FundaApp(App):
             loop = asyncio.get_running_loop()
             try:
                 updated = await loop.run_in_executor(None, fetch_prev_nav, data)
-            except Exception:
+            except OSError, ValueError, TypeError:
                 return data
         return updated if updated and updated.prev_nav != 0 else data
 
     async def refresh_all_data(self) -> None:
+        """Refresh data for all fund cards."""
         semaphore = asyncio.Semaphore(3)
         results = await asyncio.gather(
             *[self._fetch_card_data(card, semaphore) for card in self.fund_cards],
             return_exceptions=True,
         )
-        card_data: dict[FundCard, FundData] = {}
-        for card, result in zip(self.fund_cards, results, strict=True):
-            if isinstance(result, FundData):
-                card_data[card] = result
+        card_data: dict[FundCard, FundData] = {
+            card: result
+            for card, result in zip(self.fund_cards, results, strict=True)
+            if isinstance(result, FundData)
+        }
 
         needs_prev_nav = [data for data in card_data.values() if data.prev_nav == 0]
         if needs_prev_nav:
@@ -216,7 +231,9 @@ class FundaApp(App):
                 save_fund_cache(card.fund_data)
 
     async def action_refresh(self) -> None:
+        """Handle refresh action."""
         await self.refresh_all_data()
 
     def on_mount(self) -> None:
-        asyncio.create_task(self.refresh_all_data())
+        """Handle mount event."""
+        self.refresh_task = asyncio.create_task(self.refresh_all_data())

@@ -1,3 +1,5 @@
+"""Configuration module."""
+
 import os
 from copy import deepcopy
 from pathlib import Path
@@ -25,6 +27,7 @@ def _resolve_config_path() -> Path | None:
 
 
 def load_config() -> dict:
+    """Load configuration from file or return defaults."""
     config_path = _resolve_config_path()
     if config_path is None:
         return deepcopy(DEFAULT_CONFIG)
@@ -32,9 +35,9 @@ def load_config() -> dict:
     try:
         with config_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-            if isinstance(data, dict):
-                return data
-            raise ValueError("Config file content must be a mapping")
-    except Exception as e:
-        print(f"Failed to load config: {e}")
+    except OSError, ValueError:
         return deepcopy(DEFAULT_CONFIG)
+
+    if isinstance(data, dict):
+        return data
+    return deepcopy(DEFAULT_CONFIG)

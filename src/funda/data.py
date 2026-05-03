@@ -369,6 +369,23 @@ def is_trading_day(date: datetime) -> bool:
     return date.weekday() < _WEEKEND_DAYS
 
 
+def is_trading_hours(now: datetime | None = None) -> bool:
+    """Check if current time is within A-share trading hours on a trading day.
+
+    Args:
+        now: Current time (defaults to now in Asia/Shanghai)
+
+    Returns:
+        True if within trading hours on a trading day
+
+    """
+    if now is None:
+        now = datetime.now(tz=_TZ)
+    if not is_trading_day(now):
+        return False
+    return _TRADING_START_HOUR <= now.hour < _TRADING_END_HOUR
+
+
 def get_last_trading_date(date: datetime) -> datetime:
     """Get the last trading date (handles weekends).
 
@@ -530,8 +547,10 @@ def _lookup_cached_estimate(code: str) -> tuple[float, str]:
 
 
 def _add_estimate(fund: FundData, code: str) -> None:
-    """Add real-time estimate to FundData if NAV is available."""
+    """Add real-time estimate to FundData if NAV is available and market is open."""
     if fund.nav <= 0:
+        return
+    if not is_trading_hours():
         return
     estimate, update_time = _lookup_etf_estimate(code)
     if estimate > 0:
@@ -569,7 +588,13 @@ def get_fund_data_full(code: str, alias: str = "") -> FundData:
             row = etf_dict.get(f"{prefix}{code}")
             if row is not None:
                 fund = _parse_etf_row(row, code, alias, today)
-                fund.estimate_time = datetime.now(tz=_TZ).strftime("%H:%M:%S")
+                if is_trading_hours(today):
+                    fund.estimate_time = datetime.now(
+                        tz=_TZ,
+                    ).strftime("%H:%M:%S")
+                else:
+                    fund.estimate_nav = 0.0
+                    fund.estimate_time = ""
                 return fund
     except _FETCH_ERRORS:
         pass

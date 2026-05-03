@@ -14,3 +14,6 @@ format:
 
 format-check:
     ruff format --check ./src
+
+open:
+    uv run funda

@@ -120,7 +120,7 @@ class FundaApp(App):
                         self.fund_cards.append(card)
                         yield card
 
-            yield Label("Press 'r' refresh | 'q' quit", classes="footer")
+            yield Label("r refresh | q quit | shift+select copy", classes="footer")
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Handle group selection changes."""

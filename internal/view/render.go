@@ -53,12 +53,15 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time)
 		estLabel := labelStyle.Render("实时估值:") //nolint:gosmopolitan // Chinese UI labels
 		estimateLine := estLabel + estimateSty.Render(estimateStr)
 		lines = append(lines, estimateLine)
+	} else {
+		estLabel := labelStyle.Render("实时估值:") //nolint:gosmopolitan // Chinese UI labels
+		lines = append(lines, estLabel+valueStyle.Render("--"))
 	}
 
 	content := strings.Join(lines, "\n")
 
 	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(fundBorderColor)).
 		Padding(0, 1).
 		Width(width).
@@ -187,10 +190,14 @@ func RenderFooter(width int) string {
 		Foreground(lipgloss.Color("245")).
 		Align(lipgloss.Center).
 		Width(width).
-		Render("r refresh | s search | ←/→ group | q quit")
+		Render("r refresh | s search | ↑/↓ scroll | ←/→ group | q quit")
 }
 
 func RenderStatusBar(msg string, width int, isError bool) string {
+	if msg == "" {
+		return ""
+	}
+
 	style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center)
 
 	if isError {
@@ -200,6 +207,38 @@ func RenderStatusBar(msg string, width int, isError bool) string {
 	}
 
 	return style.Render(msg)
+}
+
+func RenderScrollbar(offset, total, visible, height int) string {
+	if total <= visible || height <= 0 {
+		return ""
+	}
+
+	thumbSize := min(max(1, height*visible/total), height)
+
+	thumbPos := 0
+	if total > visible {
+		thumbPos = offset * (height - thumbSize) / (total - visible)
+	}
+
+	var builder strings.Builder
+
+	thumbStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	trackStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("239"))
+
+	for idx := range height {
+		if idx >= thumbPos && idx < thumbPos+thumbSize {
+			builder.WriteString(thumbStyle.Render("┃"))
+		} else {
+			builder.WriteString(trackStyle.Render("│"))
+		}
+
+		if idx < height-1 {
+			builder.WriteByte('\n')
+		}
+	}
+
+	return builder.String()
 }
 
 func RenderSearchOverlay(
@@ -233,7 +272,7 @@ func RenderSearchOverlay(
 	}
 
 	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("63")).
 		Padding(1, overlayPaddingX).
 		Width(width - overlayWidthSub).

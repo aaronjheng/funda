@@ -17,6 +17,9 @@ const (
 	minCardWidth              = 20
 	labelWidth                = 12
 	valueWidthOffset          = 14
+	fixedSectionGaps          = 3
+	scrollbarWidth            = 2
+	cardFrameWidth            = 4 // border(2) + horizontal padding(2)
 )
 
 type tickMsg time.Time
@@ -47,6 +50,7 @@ type Model struct {
 	searchResults []data.SearchHit
 	keymap        KeyMap
 	lastRefresh   time.Time
+	scrollOffset  int
 }
 
 func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
@@ -66,6 +70,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
 		searchResults: nil,
 		keymap:        DefaultKeyMap(),
 		lastRefresh:   time.Time{},
+		scrollOffset:  0,
 	}
 }
 
@@ -97,10 +102,11 @@ func (m Model) View() tea.View {
 	rows := m.renderFundRows(group.Funds, cardWidth, lastTradingDay)
 
 	if len(rows) > 0 {
-		sections = append(sections, lipgloss.JoinVertical(lipgloss.Left, rows...))
+		sections = append(sections, m.renderScrollableRows(rows, cardWidth))
 	} else {
 		noFundsStyle := lipgloss.NewStyle().
 			Width(m.width).
+			Height(m.availableHeight()).
 			Align(lipgloss.Center)
 
 		sections = append(sections, noFundsStyle.Render("No funds in this group"))
@@ -169,6 +175,84 @@ func (m Model) renderFundPair(
 	}
 
 	return pair
+}
+
+func (m Model) calcMaxScrollOffset(rows []string, availableHeight int) int {
+	excess := 0
+	for _, row := range rows {
+		excess += lipgloss.Height(row)
+	}
+
+	excess -= availableHeight
+	if excess <= 0 {
+		return 0
+	}
+
+	cutoff := 0
+
+	for idx, row := range rows {
+		cutoff += lipgloss.Height(row)
+
+		if cutoff >= excess {
+			return idx + 1
+		}
+	}
+
+	return len(rows)
+}
+
+func (m Model) availableHeight() int {
+	fixed := lipgloss.Height(RenderGroupSelector(m.groups, m.currentGroup, m.width)) +
+		lipgloss.Height(m.renderStatusBar()) +
+		lipgloss.Height(RenderFooter(m.width)) + fixedSectionGaps
+
+	return max(0, m.height-fixed)
+}
+
+func (m Model) renderScrollableRows(rows []string, cardWidth int) string {
+	available := m.availableHeight()
+
+	totalHeight := 0
+	for _, row := range rows {
+		totalHeight += lipgloss.Height(row)
+	}
+
+	if totalHeight <= available {
+		return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	}
+
+	adjustedCardWidth := (m.width - scrollbarWidth - (cardsPerRow - 1) - cardsPerRow*cardFrameWidth) / cardsPerRow
+	if adjustedCardWidth < minCardWidth {
+		adjustedCardWidth = m.width - scrollbarWidth - cardFrameWidth
+	}
+
+	if adjustedCardWidth != cardWidth {
+		lastTradingDay := data.GetLastTradingDate(time.Now())
+		group := m.groups[m.currentGroup]
+		rows = m.renderFundRows(group.Funds, adjustedCardWidth, lastTradingDay)
+	}
+
+	maxScroll := m.calcMaxScrollOffset(rows, available)
+	offset := max(0, min(m.scrollOffset, maxScroll))
+
+	var visible []string
+
+	visibleHeight := 0
+
+	for idx := offset; idx < len(rows); idx++ {
+		rowHeight := lipgloss.Height(rows[idx])
+		if visibleHeight+rowHeight > available && len(visible) > 0 {
+			break
+		}
+
+		visible = append(visible, rows[idx])
+		visibleHeight += rowHeight
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, visible...)
+	scrollbar := RenderScrollbar(offset, len(rows), len(visible), visibleHeight)
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, content, " ", scrollbar)
 }
 
 func (m Model) renderStatusBar() string {

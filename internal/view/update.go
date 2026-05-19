@@ -22,6 +22,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.scrollOffset = 0
 
 		return m, nil
 
@@ -36,6 +37,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+const scrollPageSize = 3
+
+func (m Model) handleScrollKey(key string) Model {
+	switch key {
+	case "up", "k":
+		m.scrollOffset = max(0, m.scrollOffset-1)
+	case "down", "j":
+		m.scrollOffset++
+	case "pgup":
+		m.scrollOffset = max(0, m.scrollOffset-scrollPageSize)
+	case "pgdown":
+		m.scrollOffset += scrollPageSize
+	}
+
+	return m
 }
 
 func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -59,13 +77,17 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "left", "h":
 		if m.currentGroup > 0 {
 			m.currentGroup--
+			m.scrollOffset = 0
 			m = m.loadGroupCache()
 		}
 	case "right", "l":
 		if m.currentGroup < len(m.groups)-1 {
 			m.currentGroup++
+			m.scrollOffset = 0
 			m = m.loadGroupCache()
 		}
+	case "up", "k", "down", "j", "pgup", "pgdown":
+		m = m.handleScrollKey(msg.String())
 	}
 
 	return m, nil

@@ -237,7 +237,7 @@ func (f *Fetcher) populateFromBulk(ctx context.Context, fund *FundData, code str
 			if fund.NAV == 0 && fund.PrevNAV > 0 {
 				fund.NAV = fund.PrevNAV
 				fund.NAVDate = prevDate
-				fund.DayChange = 0
+				fund.PrevNAV = 0
 			}
 
 			return

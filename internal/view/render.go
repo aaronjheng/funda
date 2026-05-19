@@ -23,6 +23,8 @@ const (
 )
 
 func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time) string {
+	contentWidth := max(0, width-cardFrameWidth)
+
 	title := formatFundTitle(fundData)
 	navStr := formatNAV(fundData)
 	dateStr := formatNAVDate(fundData)
@@ -31,31 +33,35 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time)
 	estimateStr, estimateSty := formatEstimate(fundData, lastTradingDay)
 
 	labelStyle := lipgloss.NewStyle().Width(fundLabelWidth).Foreground(lipgloss.Color(fundLabelColor))
-	valueStyle := lipgloss.NewStyle().Width(width - fundValueOffset)
+	valueMaxWidth := max(0, contentWidth-fundLabelWidth)
+	valueStyle := lipgloss.NewStyle().MaxWidth(valueMaxWidth)
 
 	dateRender := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(fundLabelColor)).
 		Render(dateStr)
 
+	titleLine := lipgloss.NewStyle().Bold(true).MaxWidth(contentWidth).Render(title)
+
 	navLine := labelStyle.Render("最新净值:") + //nolint:gosmopolitan // Chinese UI labels
-		valueStyle.Render(navStr) + dateRender
+		valueStyle.Render(navStr+dateRender)
 
 	changeLine := labelStyle.Render("日涨跌:") + //nolint:gosmopolitan // Chinese UI labels
-		changeSty.Render(changeStr)
+		changeSty.MaxWidth(valueMaxWidth).Render(changeStr)
 
 	lines := []string{
-		lipgloss.NewStyle().Bold(true).Render(title),
+		titleLine,
 		navLine,
 		changeLine,
 	}
 
 	if estimateStr != "" {
 		estLabel := labelStyle.Render("实时估值:") //nolint:gosmopolitan // Chinese UI labels
-		estimateLine := estLabel + estimateSty.Render(estimateStr)
+		estimateLine := estLabel + estimateSty.MaxWidth(valueMaxWidth).Render(estimateStr)
 		lines = append(lines, estimateLine)
 	} else {
 		estLabel := labelStyle.Render("实时估值:") //nolint:gosmopolitan // Chinese UI labels
-		lines = append(lines, estLabel+valueStyle.Render("--"))
+		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(fundLabelColor))
+		lines = append(lines, estLabel+mutedStyle.MaxWidth(valueMaxWidth).Render("--"))
 	}
 
 	content := strings.Join(lines, "\n")

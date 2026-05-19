@@ -221,9 +221,9 @@ func (m Model) renderScrollableRows(rows []string, cardWidth int) string {
 		return lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
 
-	adjustedCardWidth := (m.width - scrollbarWidth - (cardsPerRow - 1) - cardsPerRow*cardFrameWidth) / cardsPerRow
+	adjustedCardWidth := (m.width - scrollbarWidth - (cardsPerRow - 1)) / cardsPerRow
 	if adjustedCardWidth < minCardWidth {
-		adjustedCardWidth = m.width - scrollbarWidth - cardFrameWidth
+		adjustedCardWidth = m.width - scrollbarWidth
 	}
 
 	if adjustedCardWidth != cardWidth {

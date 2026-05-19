@@ -2,30 +2,32 @@
 
 ## Project
 
-A fund valuation TUI tool built with Python, using AKShare to fetch fund data and Textual to build the terminal user interface.
+A fund valuation TUI tool built with Go, using Bubble Tea for the terminal user interface and fetching fund data from EastMoney and Sina Finance APIs.
 
 ## Environment
 
-- Python 3.14+
-- Use UV for dependency management
+- Go 1.26+
+- Use standard `go` toolchain for dependency management
 - Prefer `just` for common development commands
 
 ## Common Commands
 
 ```bash
-uv sync
-uv run funda
 just lint
 just lint-with-fix
-just format
-just format-check
 just bump-deps
 ```
 
 ## Code Quality
 
-- Use Ruff for linting and formatting
-- Ruff config: `.ruff.toml`
+- Use golangci-lint for linting and formatting
+- golangci-lint config: `.golangci.yaml`
+
+## Testing
+
+- Do NOT create unit tests proactively
+- Do NOT run tests proactively
+- Only create or run tests when explicitly requested by the user
 
 ## Git Workflow
 

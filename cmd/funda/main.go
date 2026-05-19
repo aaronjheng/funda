@@ -1,0 +1,57 @@
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/aaronjheng/funda/internal/config"
+	"github.com/aaronjheng/funda/internal/data"
+	"github.com/aaronjheng/funda/internal/view"
+)
+
+//nolint:gochecknoglobals // Cobra command wiring keeps shared CLI state here.
+var cfg config.Config
+
+func rootCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "funda",
+		Short:        "A terminal UI tool for tracking fund valuation data",
+		SilenceUsage: true,
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if _, ok := cmd.Annotations["skipConfigLoad"]; ok {
+				return nil
+			}
+
+			cfgFilepath, err := cmd.Flags().GetString("config")
+			if err != nil {
+				return fmt.Errorf("config flag error: %w", err)
+			}
+
+			cfg = config.LoadConfig(cfgFilepath)
+
+			return nil
+		},
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fetcher := data.NewFetcher()
+
+			return view.Run(cfg, fetcher)
+		},
+	}
+
+	cmd.SetHelpCommand(&cobra.Command{Hidden: true})
+
+	cmd.PersistentFlags().StringP("config", "f", "", "Config file path.")
+
+	cmd.AddCommand(versionCmd())
+
+	return cmd
+}
+
+func main() {
+	err := rootCmd().Execute()
+	if err != nil {
+		os.Exit(1)
+	}
+}

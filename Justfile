@@ -1,19 +1,14 @@
 set dotenv-load
 
 bump-deps:
-    uv lock --upgrade
+    go get -u ./...
+    go mod tidy
 
 lint:
-    ruff check ./src
+    golangci-lint run --verbose --allow-parallel-runners ./...
 
 lint-with-fix:
-    ruff check --fix ./src
+    golangci-lint run --verbose --allow-parallel-runners --fix ./...
 
-format:
-    ruff format ./src
-
-format-check:
-    ruff format --check ./src
-
-open:
-    uv run funda
+install:
+    go install github.com/aaronjheng/funda/cmd/funda@$(git ls-remote https://github.com/aaronjheng/funda.git refs/heads/main | cut -f1)

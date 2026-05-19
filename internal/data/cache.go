@@ -131,6 +131,15 @@ func cacheDir() string {
 func LoadFundCache(code string) (FundData, bool) {
 	path := filepath.Join(cacheDir(), code+".json")
 
+	info, err := os.Stat(path)
+	if err != nil {
+		return FundData{}, false //nolint:exhaustruct // zero-value return for stat failure
+	}
+
+	if time.Since(info.ModTime()) > cacheTTL() {
+		return FundData{}, false //nolint:exhaustruct // zero-value return for expired cache
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return FundData{}, false //nolint:exhaustruct // zero-value return for read failure

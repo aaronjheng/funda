@@ -218,7 +218,7 @@ func (f *Fetcher) get(ctx context.Context, url string, headers map[string]string
 }
 
 func (f *Fetcher) populateFromBulk(ctx context.Context, fund *FundData, code string) {
-	rows, navDate, _, err := f.FetchAllFunds(ctx)
+	rows, navDate, prevDate, err := f.FetchAllFunds(ctx)
 	if err != nil {
 		return
 	}
@@ -231,6 +231,13 @@ func (f *Fetcher) populateFromBulk(ctx context.Context, fund *FundData, code str
 			fund.PrevNAV = row.PrevNAV
 			fund.DayChange = row.DayChange
 			fund.NAVDate = navDate
+
+			// Fallback: if today's NAV is not yet available, use previous day's
+			if fund.NAV == 0 && fund.PrevNAV > 0 {
+				fund.NAV = fund.PrevNAV
+				fund.NAVDate = prevDate
+				fund.DayChange = 0
+			}
 
 			return
 		}

@@ -15,7 +15,7 @@ const (
 	fundLabelWidth  = 12
 	fundValueOffset = 14
 	fundLabelColor  = "245"
-	fundBorderColor = "63"
+	fundBorderColor = "#3b82f6"
 	positiveColor   = "#ff6b6b"
 	negativeColor   = "#51cf66"
 	overlayPaddingX = 2

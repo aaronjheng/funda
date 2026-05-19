@@ -11,10 +11,9 @@ import (
 	"github.com/aaronjheng/funda/internal/view"
 )
 
-//nolint:gochecknoglobals // Cobra command wiring keeps shared CLI state here.
-var cfg config.Config
-
 func rootCmd() *cobra.Command {
+	var cfg config.Config
+
 	cmd := &cobra.Command{
 		Use:          "funda",
 		Short:        "A terminal UI tool for tracking fund valuation data",

@@ -166,12 +166,13 @@ func (m Model) renderFundPair(
 	for col := 0; col < cardsPerRow && startIdx+col < len(funds); col++ {
 		fund := funds[startIdx+col]
 
-		fd := m.fundData[fund.Code]
-		if fd.Code == "" {
-			fd = data.FundData{Code: fund.Code, Alias: fund.Alias} //nolint:exhaustruct // placeholder for missing data
+		fundData := m.fundData[fund.Code]
+		if fundData.Code == "" {
+			fundData.Code = fund.Code
+			fundData.Alias = fund.Alias
 		}
 
-		pair = append(pair, RenderFundCard(fd, cardWidth, lastTradingDay))
+		pair = append(pair, RenderFundCard(fundData, cardWidth, lastTradingDay))
 	}
 
 	return pair

@@ -14,12 +14,12 @@ type Group struct {
 
 // Alerts holds alert configuration.
 type Alerts struct {
-	HighlightThreshold float64 `yaml:"highlight_threshold"` //nolint:tagliatelle
+	HighlightThreshold float64 `yaml:"highlight_threshold"`
 }
 
 // Config holds the full application configuration.
 type Config struct {
 	Groups          []Group `yaml:"groups"`
-	RefreshInterval int     `yaml:"refresh_interval"` //nolint:tagliatelle
+	RefreshInterval int     `yaml:"refresh_interval"`
 	Alerts          Alerts  `yaml:"alerts"`
 }

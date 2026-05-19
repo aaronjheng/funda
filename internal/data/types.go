@@ -16,12 +16,12 @@ type FundData struct {
 	Alias        string  `json:"alias"`
 	Name         string  `json:"name"`
 	NAV          float64 `json:"nav"`
-	AccNAV       float64 `json:"acc_nav"`       //nolint:tagliatelle // snake_case for cache compatibility
-	NAVDate      string  `json:"nav_date"`      //nolint:tagliatelle // snake_case for cache compatibility
-	DayChange    float64 `json:"day_change"`    //nolint:tagliatelle // snake_case for cache compatibility
-	EstimateNAV  float64 `json:"estimate_nav"`  //nolint:tagliatelle // snake_case for cache compatibility
-	EstimateTime string  `json:"estimate_time"` //nolint:tagliatelle // snake_case for cache compatibility
-	PrevNAV      float64 `json:"prev_nav"`      //nolint:tagliatelle // snake_case for cache compatibility
+	AccNAV       float64 `json:"acc_nav"`
+	NAVDate      string  `json:"nav_date"`
+	DayChange    float64 `json:"day_change"`
+	EstimateNAV  float64 `json:"estimate_nav"`
+	EstimateTime string  `json:"estimate_time"`
+	PrevNAV      float64 `json:"prev_nav"`
 }
 
 // DayChangePercent calculates the daily change percentage.

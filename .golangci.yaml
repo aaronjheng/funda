@@ -118,6 +118,11 @@ linters:
     exhaustruct:
       include:
         - 'github\.com/aaronjheng/funda/.+'
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+          yaml: snake
   exclusions:
     generated: lax
     presets:
@@ -134,6 +139,9 @@ linters:
           - gochecknoglobals
           - gosec
         path: _test\.go$
+      - linters:
+          - gosmopolitan
+        path: internal/view/
 formatters:
   enable:
     - gci

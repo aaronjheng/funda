@@ -21,18 +21,6 @@ const (
 	minFundInfoPoints = 2
 )
 
-//nolint:gochecknoglobals // HTTP headers are immutable lookup tables for API requests
-var defaultHeaders = map[string]string{
-	"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-	"Referer":    "https://fund.eastmoney.com/",
-}
-
-//nolint:gochecknoglobals // HTTP headers are immutable lookup tables for API requests
-var sinaHeaders = map[string]string{
-	"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-	"Referer":    "https://vip.stock.finance.sina.com.cn/",
-}
-
 const (
 	eastMoneyBulkURL = "https://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx" +
 		"?t=1&lx=1&letter=&gsid=&text=&sort=zdf,desc" +
@@ -51,10 +39,12 @@ type NetWorthPoint struct {
 
 // Fetcher handles HTTP requests and caching for fund data.
 type Fetcher struct {
-	client   *http.Client
-	sem      chan struct{}
-	memCache *MemoryCache
-	etfCache *ETFTickerCache
+	client         *http.Client
+	sem            chan struct{}
+	memCache       *MemoryCache
+	etfCache       *ETFTickerCache
+	defaultHeaders map[string]string
+	sinaHeaders    map[string]string
 }
 
 // NewFetcher creates a new Fetcher with default settings.
@@ -64,12 +54,20 @@ func NewFetcher() *Fetcher {
 		sem:      make(chan struct{}, maxConcurrent),
 		memCache: NewMemoryCache(),
 		etfCache: &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}},
+		defaultHeaders: map[string]string{
+			"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+			"Referer":    "https://fund.eastmoney.com/",
+		},
+		sinaHeaders: map[string]string{
+			"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+			"Referer":    "https://vip.stock.finance.sina.com.cn/",
+		},
 	}
 }
 
 // FetchAllFunds fetches the bulk EastMoney fund data.
 func (f *Fetcher) FetchAllFunds(ctx context.Context) ([]FundRow, string, string, error) {
-	body, err := f.get(ctx, eastMoneyBulkURL, defaultHeaders)
+	body, err := f.get(ctx, eastMoneyBulkURL, f.defaultHeaders)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("fetch eastmoney bulk: %w", err)
 	}
@@ -83,7 +81,7 @@ func (f *Fetcher) FetchETFData(ctx context.Context) ([]ETFRow, error) {
 		return data, nil
 	}
 
-	body, err := f.get(ctx, sinaETFURL, sinaHeaders)
+	body, err := f.get(ctx, sinaETFURL, f.sinaHeaders)
 	if err != nil {
 		return nil, fmt.Errorf("fetch sina etf: %w", err)
 	}
@@ -102,7 +100,7 @@ func (f *Fetcher) FetchETFData(ctx context.Context) ([]ETFRow, error) {
 func (f *Fetcher) FetchFundInfo(ctx context.Context, code string) ([]NetWorthPoint, error) {
 	url := fmt.Sprintf("https://fund.eastmoney.com/pingzhongdata/%s.js", code)
 
-	body, err := f.get(ctx, url, defaultHeaders)
+	body, err := f.get(ctx, url, f.defaultHeaders)
 	if err != nil {
 		return nil, fmt.Errorf("fetch fund info for %s: %w", code, err)
 	}
@@ -125,7 +123,10 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 		return cached, nil
 	}
 
-	fund := FundData{Code: code, Alias: alias} //nolint:exhaustruct // fields populated incrementally below
+	var fund FundData
+
+	fund.Code = code
+	fund.Alias = alias
 
 	f.populateFromBulk(ctx, &fund, code)
 	f.populatePrevNAV(ctx, &fund, code)

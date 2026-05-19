@@ -27,7 +27,7 @@ const (
 	tradingCacheDuration  = 5 * time.Minute
 	offHoursCacheDuration = 12 * time.Hour
 	etfCacheDuration      = 60 * time.Second
-	cacheDirPermissions   = 0o755
+	cacheDirPermissions   = 0o700
 	cacheFilePermissions  = 0o600
 )
 
@@ -54,11 +54,15 @@ func (c *MemoryCache) Get(code string) (FundData, bool) {
 
 	entry, ok := c.items[code]
 	if !ok {
-		return FundData{}, false //nolint:exhaustruct // zero-value return for cache miss
+		var empty FundData
+
+		return empty, false
 	}
 
 	if time.Since(entry.timestamp) > cacheTTL() {
-		return FundData{}, false //nolint:exhaustruct // zero-value return for expired entry
+		var empty FundData
+
+		return empty, false
 	}
 
 	return entry.data, true
@@ -122,7 +126,7 @@ func cacheDir() string {
 
 	dir := filepath.Join(base, "funda", "fund_data")
 
-	_ = os.MkdirAll(dir, cacheDirPermissions) //nolint:gosec // cache directory needs read/exec for user
+	_ = os.MkdirAll(dir, cacheDirPermissions) //nolint:gosec // path from XDG env + known subdir
 
 	return dir
 }
@@ -133,23 +137,31 @@ func LoadFundCache(code string) (FundData, bool) {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return FundData{}, false //nolint:exhaustruct // zero-value return for stat failure
+		var empty FundData
+
+		return empty, false
 	}
 
 	if time.Since(info.ModTime()) > cacheTTL() {
-		return FundData{}, false //nolint:exhaustruct // zero-value return for expired cache
+		var empty FundData
+
+		return empty, false
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return FundData{}, false //nolint:exhaustruct // zero-value return for read failure
+		var empty FundData
+
+		return empty, false
 	}
 
 	var fundData FundData
 
 	err = json.Unmarshal(data, &fundData)
 	if err != nil {
-		return FundData{}, false //nolint:exhaustruct // zero-value return for unmarshal failure
+		var empty FundData
+
+		return empty, false
 	}
 
 	return fundData, true

@@ -78,7 +78,8 @@ func parseEastMoneyRows(datas [][]json.RawMessage, showday []string) []FundRow {
 			continue
 		}
 
-		row := FundRow{} //nolint:exhaustruct // fields populated individually below
+		var row FundRow
+
 		row.Code = unmarshalString(item[0])
 		row.Name = unmarshalString(item[1])
 		row.NAV = unmarshalFloat(item[3])

@@ -174,9 +174,8 @@ func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) stri
 
 		if idx == selectedIdx {
 			highlight := lipgloss.NewStyle().
-				Bold(true).
 				Foreground(lipgloss.Color("15")).
-				Render("[" + label + "]")
+				Render(label)
 			parts = append(parts, highlight)
 		} else {
 			muted := lipgloss.NewStyle().

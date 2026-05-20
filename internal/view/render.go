@@ -214,16 +214,16 @@ func RenderStatusBar(msg string, width int, isError bool) string {
 	return style.Render(msg)
 }
 
-func RenderScrollbar(offset, total, visible, height int) string {
-	if total <= visible || height <= 0 {
+func RenderScrollbar(offset, totalLines, trackHeight int) string {
+	if totalLines <= trackHeight || trackHeight <= 0 {
 		return ""
 	}
 
-	thumbSize := min(max(1, height*visible/total), height)
+	thumbSize := min(max(1, trackHeight*trackHeight/totalLines), trackHeight)
 
 	thumbPos := 0
-	if total > visible {
-		thumbPos = offset * (height - thumbSize) / (total - visible)
+	if totalLines > trackHeight {
+		thumbPos = offset * (trackHeight - thumbSize) / (totalLines - trackHeight)
 	}
 
 	var builder strings.Builder
@@ -231,14 +231,14 @@ func RenderScrollbar(offset, total, visible, height int) string {
 	thumbStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	trackStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("239"))
 
-	for idx := range height {
+	for idx := range trackHeight {
 		if idx >= thumbPos && idx < thumbPos+thumbSize {
 			builder.WriteString(thumbStyle.Render("┃"))
 		} else {
 			builder.WriteString(trackStyle.Render("│"))
 		}
 
-		if idx < height-1 {
+		if idx < trackHeight-1 {
 			builder.WriteByte('\n')
 		}
 	}

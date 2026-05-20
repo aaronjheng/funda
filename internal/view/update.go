@@ -26,6 +26,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
+	case tea.MouseWheelMsg:
+		return m.handleMouseWheel(msg), nil
+
 	case tickMsg:
 		return m.handleTick()
 
@@ -39,18 +42,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-const scrollPageSize = 3
+const (
+	scrollKeyStep     = 3
+	scrollWheelStep   = 3
+	scrollPageDivisor = 2
+)
 
 func (m Model) handleScrollKey(key string) Model {
+	pageSize := max(1, m.availableHeight()/scrollPageDivisor)
+
 	switch key {
 	case "up", "k":
-		m.scrollOffset = max(0, m.scrollOffset-1)
+		m.scrollOffset = max(0, m.scrollOffset-scrollKeyStep)
 	case "down", "j":
-		m.scrollOffset++
+		m.scrollOffset += scrollKeyStep
 	case "pgup":
-		m.scrollOffset = max(0, m.scrollOffset-scrollPageSize)
+		m.scrollOffset = max(0, m.scrollOffset-pageSize)
 	case "pgdown":
-		m.scrollOffset += scrollPageSize
+		m.scrollOffset += pageSize
+	}
+
+	return m
+}
+
+func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) Model {
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		m.scrollOffset = max(0, m.scrollOffset-scrollWheelStep)
+	case tea.MouseWheelDown:
+		m.scrollOffset += scrollWheelStep
 	}
 
 	return m

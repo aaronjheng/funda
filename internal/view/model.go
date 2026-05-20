@@ -1,6 +1,7 @@
 package view
 
 import (
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -131,6 +132,7 @@ func (m Model) View() tea.View {
 
 	v := tea.NewView(view)
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 
 	return v
 }
@@ -178,28 +180,8 @@ func (m Model) renderFundPair(
 	return pair
 }
 
-func (m Model) calcMaxScrollOffset(rows []string, availableHeight int) int {
-	excess := 0
-	for _, row := range rows {
-		excess += lipgloss.Height(row)
-	}
-
-	excess -= availableHeight
-	if excess <= 0 {
-		return 0
-	}
-
-	cutoff := 0
-
-	for idx, row := range rows {
-		cutoff += lipgloss.Height(row)
-
-		if cutoff >= excess {
-			return idx + 1
-		}
-	}
-
-	return len(rows)
+func (m Model) calcMaxScrollOffset(totalLines, availableHeight int) int {
+	return max(0, totalLines-availableHeight)
 }
 
 func (m Model) availableHeight() int {
@@ -233,27 +215,23 @@ func (m Model) renderScrollableRows(rows []string, cardWidth int) string {
 		rows = m.renderFundRows(group.Funds, adjustedCardWidth, lastTradingDay)
 	}
 
-	maxScroll := m.calcMaxScrollOffset(rows, available)
-	offset := max(0, min(m.scrollOffset, maxScroll))
+	allContent := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	allLines := strings.Split(allContent, "\n")
+	totalLines := len(allLines)
 
-	var visible []string
+	maxOffset := m.calcMaxScrollOffset(totalLines, available)
+	offset := max(0, min(m.scrollOffset, maxOffset))
 
-	visibleHeight := 0
-
-	for idx := offset; idx < len(rows); idx++ {
-		rowHeight := lipgloss.Height(rows[idx])
-		if visibleHeight+rowHeight > available && len(visible) > 0 {
-			break
-		}
-
-		visible = append(visible, rows[idx])
-		visibleHeight += rowHeight
+	if offset > 0 && offset+available > totalLines {
+		offset = maxOffset
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, visible...)
-	scrollbar := RenderScrollbar(offset, len(rows), len(visible), visibleHeight)
+	end := min(offset+available, totalLines)
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, content, " ", scrollbar)
+	visibleContent := strings.Join(allLines[offset:end], "\n")
+	scrollbar := RenderScrollbar(offset, totalLines, available)
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, visibleContent, " ", scrollbar)
 }
 
 func (m Model) renderStatusBar() string {

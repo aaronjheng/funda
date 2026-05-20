@@ -1,6 +1,6 @@
 # Funda
 
-A terminal UI tool for tracking and viewing fund valuation data, built with Go, Bubble Tea, and EastMoney/Sina Finance APIs.
+A terminal UI tool for tracking and viewing fund valuation data.
 
 ## Configuration
 

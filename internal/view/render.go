@@ -195,7 +195,7 @@ func RenderFooter(width int) string {
 		Foreground(lipgloss.Color("245")).
 		Align(lipgloss.Center).
 		Width(width).
-		Render("r refresh | s search | c clear cache | ↑/↓ scroll | ←/→ group | q quit")
+		Render("r refresh | s search | c clear cache | click copy | ↑/↓ scroll | ←/→ group | q quit")
 }
 
 func RenderStatusBar(msg string, width int, isError bool) string {

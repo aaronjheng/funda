@@ -21,6 +21,7 @@ const (
 	fixedSectionGaps          = 3
 	scrollbarWidth            = 2
 	cardFrameWidth            = 4 // border(2) + horizontal padding(2)
+	clipboardDisplayDuration  = 2 * time.Second
 )
 
 type tickMsg time.Time
@@ -34,6 +35,8 @@ type searchResultMsg struct {
 	results []data.SearchHit
 	err     error
 }
+
+type clearClipboardMsg struct{}
 
 type Model struct {
 	config        config.Config
@@ -52,6 +55,13 @@ type Model struct {
 	keymap        KeyMap
 	lastRefresh   time.Time
 	scrollOffset  int
+	clipboardMsg  string
+}
+
+func clearClipboardMsgCmd() tea.Cmd {
+	return tea.Tick(clipboardDisplayDuration, func(_ time.Time) tea.Msg {
+		return clearClipboardMsg{}
+	})
 }
 
 func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
@@ -72,6 +82,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
 		keymap:        DefaultKeyMap(),
 		lastRefresh:   time.Time{},
 		scrollOffset:  0,
+		clipboardMsg:  "",
 	}
 }
 
@@ -236,6 +247,8 @@ func (m Model) renderScrollableRows(rows []string, cardWidth int) string {
 
 func (m Model) renderStatusBar() string {
 	switch {
+	case m.clipboardMsg != "":
+		return RenderStatusBar(m.clipboardMsg, m.width, false)
 	case m.errMsg != "":
 		return RenderStatusBar(m.errMsg, m.width, true)
 	case m.loading:

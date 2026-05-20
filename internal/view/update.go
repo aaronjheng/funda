@@ -2,9 +2,12 @@ package view
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/atotto/clipboard"
 
 	"github.com/aaronjheng/funda/internal/config"
 	"github.com/aaronjheng/funda/internal/data"
@@ -26,6 +29,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
+	case tea.MouseClickMsg:
+		return m.handleMouseClick(msg)
+
 	case tea.MouseWheelMsg:
 		return m.handleMouseWheel(msg), nil
 
@@ -37,6 +43,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case searchResultMsg:
 		return m.handleSearchResult(msg)
+
+	case clearClipboardMsg:
+		m.clipboardMsg = ""
+
+		return m, nil
 	}
 
 	return m, nil
@@ -74,6 +85,177 @@ func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) Model {
 	}
 
 	return m
+}
+
+func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if m.searchMode || msg.Button != tea.MouseLeft {
+		return m, nil
+	}
+
+	group := m.groups[m.currentGroup]
+	if len(group.Funds) == 0 {
+		return m, nil
+	}
+
+	if !m.isMouseInFundArea(msg.Y) {
+		return m, nil
+	}
+
+	lastTradingDay := data.GetLastTradingDate(time.Now())
+
+	cardWidth := (m.width - cardPaddingWidth) / cardsPerRow
+	if cardWidth < minCardWidth {
+		cardWidth = m.width - cardPaddingWidth
+	}
+
+	rows := m.renderFundRows(group.Funds, cardWidth, lastTradingDay)
+
+	fundIdx := m.fundIndexFromMouse(msg, rows)
+	if fundIdx < 0 || fundIdx >= len(group.Funds) {
+		return m, nil
+	}
+
+	code := group.Funds[fundIdx].Code
+
+	err := clipboard.WriteAll(code)
+	if err != nil {
+		return m, nil
+	}
+
+	m.clipboardMsg = "Copied: " + m.fundDisplayName(group.Funds[fundIdx])
+
+	return m, clearClipboardMsgCmd()
+}
+
+func (m Model) fundDisplayName(fund config.Fund) string {
+	if fd, ok := m.fundData[fund.Code]; ok && fd.Name != "" {
+		return fd.Name + " (" + fund.Code + ")"
+	}
+
+	if fund.Alias != "" {
+		return fund.Alias + " (" + fund.Code + ")"
+	}
+
+	return fund.Code
+}
+
+func (m Model) isMouseInFundArea(mouseY int) bool {
+	headerHeight := lipgloss.Height(RenderGroupSelector(m.groups, m.currentGroup, m.width)) + 1
+	footerHeight := lipgloss.Height(RenderFooter(m.width))
+
+	return mouseY >= headerHeight && mouseY < m.height-footerHeight-1
+}
+
+func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, rows []string) int {
+	totalHeight := 0
+	for _, row := range rows {
+		totalHeight += lipgloss.Height(row)
+	}
+
+	available := m.availableHeight()
+	headerHeight := lipgloss.Height(RenderGroupSelector(m.groups, m.currentGroup, m.width)) + 1
+	relativeY := msg.Y - headerHeight
+
+	targetRowIdx := m.resolveRowIndex(rows, totalHeight, available, relativeY)
+	if targetRowIdx < 0 {
+		return -1
+	}
+
+	targetCol := m.resolveColumn(msg.X)
+
+	fundIdx := targetRowIdx*cardsPerRow + targetCol
+	group := m.groups[m.currentGroup]
+
+	if fundIdx >= len(group.Funds) && targetCol > 0 {
+		fundIdx = targetRowIdx * cardsPerRow
+	}
+
+	return fundIdx
+}
+
+func (m Model) resolveRowIndex(rows []string, totalHeight, available, relativeY int) int {
+	if totalHeight <= available {
+		return m.resolveRowIndexNoScroll(rows, relativeY)
+	}
+
+	return m.resolveRowIndexWithScroll(rows, available, relativeY)
+}
+
+func (m Model) resolveRowIndexNoScroll(rows []string, relativeY int) int {
+	currentY := 0
+
+	for rowIdx, row := range rows {
+		rowHeight := lipgloss.Height(row)
+
+		if relativeY >= currentY && relativeY < currentY+rowHeight {
+			return rowIdx
+		}
+
+		currentY += rowHeight
+	}
+
+	return -1
+}
+
+func (m Model) resolveRowIndexWithScroll(rows []string, available, relativeY int) int {
+	adjustedCardWidth := (m.width - scrollbarWidth - (cardsPerRow - 1)) / cardsPerRow
+	if adjustedCardWidth < minCardWidth {
+		adjustedCardWidth = m.width - scrollbarWidth
+	}
+
+	cardWidth := (m.width - cardPaddingWidth) / cardsPerRow
+	if cardWidth < minCardWidth {
+		cardWidth = m.width - cardPaddingWidth
+	}
+
+	if adjustedCardWidth != cardWidth {
+		lastTradingDay := data.GetLastTradingDate(time.Now())
+		group := m.groups[m.currentGroup]
+		rows = m.renderFundRows(group.Funds, adjustedCardWidth, lastTradingDay)
+	}
+
+	allContent := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	allLines := strings.Split(allContent, "\n")
+	totalLines := len(allLines)
+
+	maxOffset := m.calcMaxScrollOffset(totalLines, available)
+	offset := max(0, min(m.scrollOffset, maxOffset))
+
+	if offset > 0 && offset+available > totalLines {
+		offset = maxOffset
+	}
+
+	visibleLineIdx := relativeY + offset
+	if visibleLineIdx >= totalLines {
+		return -1
+	}
+
+	lineIdx := 0
+
+	for rowIdx, row := range rows {
+		rowHeight := lipgloss.Height(row)
+
+		if visibleLineIdx >= lineIdx && visibleLineIdx < lineIdx+rowHeight {
+			return rowIdx
+		}
+
+		lineIdx += rowHeight
+	}
+
+	return -1
+}
+
+func (m Model) resolveColumn(mouseX int) int {
+	if cardsPerRow <= 1 {
+		return 0
+	}
+
+	midX := m.width / cardsPerRow
+	if mouseX >= midX {
+		return 1
+	}
+
+	return 0
 }
 
 func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

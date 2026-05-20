@@ -1,6 +1,6 @@
 # Funda
 
-A terminal UI tool for tracking and viewing fund valuation data, built with Python, Textual, and AKShare.
+A terminal UI tool for tracking and viewing fund valuation data, built with Go, Bubble Tea, and EastMoney/Sina Finance APIs.
 
 ## Configuration
 
@@ -35,4 +35,4 @@ Notes:
 
 ## License
 
-Redis Console is licensed under the [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause). See [LICENSE](LICENSE) for more details.
+Funda is licensed under the [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause). See [LICENSE](LICENSE) for more details.

@@ -1,6 +1,7 @@
 package view
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -22,6 +23,9 @@ const (
 	scrollbarWidth            = 2
 	cardFrameWidth            = 4 // border(2) + horizontal padding(2)
 	clipboardDisplayDuration  = 2 * time.Second
+	fundCardContentLines      = 4 // title, nav, change, estimate
+	fundCardBorderLines       = 2
+	fundCardHeight            = fundCardContentLines + fundCardBorderLines // 6
 )
 
 type tickMsg time.Time
@@ -56,6 +60,22 @@ type Model struct {
 	lastRefresh   time.Time
 	scrollOffset  int
 	clipboardMsg  string
+	cardCache     map[string]string
+}
+
+func cardCacheKey(fund config.Fund, fundData data.FundData, cardWidth int, lastTradingDay time.Time) string {
+	return fmt.Sprintf("%s|%d|%s|%s|%v|%v|%s|%v|%s|%s",
+		fund.Code,
+		cardWidth,
+		fundData.Name,
+		fundData.Alias,
+		fundData.NAV,
+		fundData.PrevNAV,
+		fundData.NAVDate,
+		fundData.EstimateNAV,
+		fundData.EstimateTime,
+		lastTradingDay.Format("2006-01-02"),
+	)
 }
 
 func clearClipboardMsgCmd() tea.Cmd {
@@ -83,6 +103,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
 		lastRefresh:   time.Time{},
 		scrollOffset:  0,
 		clipboardMsg:  "",
+		cardCache:     make(map[string]string),
 	}
 }
 
@@ -106,15 +127,28 @@ func (m Model) View() tea.View {
 	group := m.groups[m.currentGroup]
 	lastTradingDay := data.GetLastTradingDate(time.Now())
 
+	numRows := (len(group.Funds) + cardsPerRow - 1) / cardsPerRow
+	totalHeight := numRows * fundCardHeight
+	available := m.availableHeight()
+
 	cardWidth := (m.width - cardPaddingWidth) / cardsPerRow
 	if cardWidth < minCardWidth {
 		cardWidth = m.width - cardPaddingWidth
 	}
 
-	rows := m.renderFundRows(group.Funds, cardWidth, lastTradingDay)
+	// If content overflows, account for scrollbar width to avoid double rendering
+	if totalHeight > available {
+		cardWidth = (m.width - scrollbarWidth - (cardsPerRow - 1)) / cardsPerRow
+		if cardWidth < minCardWidth {
+			cardWidth = m.width - scrollbarWidth
+		}
+	}
 
-	if len(rows) > 0 {
-		sections = append(sections, m.renderScrollableRows(rows, cardWidth))
+	if len(group.Funds) > 0 {
+		visibleStart, visibleEnd, offset := m.calcVisibleFundRange(len(group.Funds), totalHeight, available)
+		visibleFunds := group.Funds[visibleStart:visibleEnd]
+		rows := m.renderFundRows(visibleFunds, cardWidth, lastTradingDay)
+		sections = append(sections, m.renderScrollableRows(rows, totalHeight, available, offset))
 	} else {
 		noFundsStyle := lipgloss.NewStyle().
 			Width(m.width).
@@ -185,7 +219,16 @@ func (m Model) renderFundPair(
 			fundData.Alias = fund.Alias
 		}
 
-		pair = append(pair, RenderFundCard(fundData, cardWidth, lastTradingDay))
+		cacheKey := cardCacheKey(fund, fundData, cardWidth, lastTradingDay)
+		if cached, ok := m.cardCache[cacheKey]; ok {
+			pair = append(pair, cached)
+
+			continue
+		}
+
+		card := RenderFundCard(fundData, cardWidth, lastTradingDay)
+		m.cardCache[cacheKey] = card
+		pair = append(pair, card)
 	}
 
 	return pair
@@ -193,6 +236,29 @@ func (m Model) renderFundPair(
 
 func (m Model) calcMaxScrollOffset(totalLines, availableHeight int) int {
 	return max(0, totalLines-availableHeight)
+}
+
+func (m Model) clampedScrollOffset(totalHeight, available int) int {
+	if totalHeight <= available {
+		return 0
+	}
+
+	maxOffset := m.calcMaxScrollOffset(totalHeight, available)
+
+	return max(0, min(m.scrollOffset, maxOffset))
+}
+
+func (m Model) calcVisibleFundRange(totalFunds, totalHeight, available int) (int, int, int) {
+	offset := m.clampedScrollOffset(totalHeight, available)
+	end := min(offset+available, totalHeight)
+
+	startRow := offset / fundCardHeight
+	endRow := min((end+fundCardHeight-1)/fundCardHeight, (totalFunds+cardsPerRow-1)/cardsPerRow)
+
+	startFund := startRow * cardsPerRow
+	endFund := min(endRow*cardsPerRow, totalFunds)
+
+	return startFund, endFund, offset
 }
 
 func (m Model) availableHeight() int {
@@ -203,44 +269,34 @@ func (m Model) availableHeight() int {
 	return max(0, m.height-fixed)
 }
 
-func (m Model) renderScrollableRows(rows []string, cardWidth int) string {
-	available := m.availableHeight()
-
-	totalHeight := 0
-	for _, row := range rows {
-		totalHeight += lipgloss.Height(row)
-	}
-
+func (m Model) renderScrollableRows(rows []string, totalHeight, available, offset int) string {
 	if totalHeight <= available {
 		return lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
 
-	adjustedCardWidth := (m.width - scrollbarWidth - (cardsPerRow - 1)) / cardsPerRow
-	if adjustedCardWidth < minCardWidth {
-		adjustedCardWidth = m.width - scrollbarWidth
-	}
+	end := min(offset+available, totalHeight)
+	firstRowOffset := (offset / fundCardHeight) * fundCardHeight
 
-	if adjustedCardWidth != cardWidth {
-		lastTradingDay := data.GetLastTradingDate(time.Now())
-		group := m.groups[m.currentGroup]
-		rows = m.renderFundRows(group.Funds, adjustedCardWidth, lastTradingDay)
-	}
+	startRow := (offset - firstRowOffset) / fundCardHeight
+	firstRowIdx := firstRowOffset / fundCardHeight
+	endRow := min((end+fundCardHeight-1)/fundCardHeight-firstRowIdx, len(rows))
 
-	allContent := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	visibleRows := rows[startRow:endRow]
+	allContent := lipgloss.JoinVertical(lipgloss.Left, visibleRows...)
 	allLines := strings.Split(allContent, "\n")
-	totalLines := len(allLines)
 
-	maxOffset := m.calcMaxScrollOffset(totalLines, available)
-	offset := max(0, min(m.scrollOffset, maxOffset))
-
-	if offset > 0 && offset+available > totalLines {
-		offset = maxOffset
+	skipTop := (offset - firstRowOffset) % fundCardHeight
+	if skipTop > 0 && len(allLines) > skipTop {
+		allLines = allLines[skipTop:]
 	}
 
-	end := min(offset+available, totalLines)
+	keepLines := end - offset
+	if len(allLines) > keepLines {
+		allLines = allLines[:keepLines]
+	}
 
-	visibleContent := strings.Join(allLines[offset:end], "\n")
-	scrollbar := RenderScrollbar(offset, totalLines, available)
+	visibleContent := strings.Join(allLines, "\n")
+	scrollbar := RenderScrollbar(offset, totalHeight, available)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, visibleContent, " ", scrollbar)
 }

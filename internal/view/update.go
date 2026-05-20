@@ -2,7 +2,6 @@ package view
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -54,34 +53,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 const (
-	scrollKeyStep     = 3
-	scrollWheelStep   = 3
+	scrollKeyStep     = fundCardHeight // keyboard jumps by full card row
+	scrollWheelStep   = 1              // mouse/touchpad scrolls line-by-line for smoothness
 	scrollPageDivisor = 2
 )
 
+func (m Model) clampedMaxScrollOffset() int {
+	group := m.groups[m.currentGroup]
+	numRows := (len(group.Funds) + cardsPerRow - 1) / cardsPerRow
+	totalHeight := numRows * fundCardHeight
+	available := m.availableHeight()
+
+	return m.calcMaxScrollOffset(totalHeight, available)
+}
+
 func (m Model) handleScrollKey(key string) Model {
 	pageSize := max(1, m.availableHeight()/scrollPageDivisor)
+	maxOffset := m.clampedMaxScrollOffset()
 
 	switch key {
 	case "up", "k":
 		m.scrollOffset = max(0, m.scrollOffset-scrollKeyStep)
 	case "down", "j":
-		m.scrollOffset += scrollKeyStep
+		m.scrollOffset = min(maxOffset, m.scrollOffset+scrollKeyStep)
 	case "pgup":
 		m.scrollOffset = max(0, m.scrollOffset-pageSize)
 	case "pgdown":
-		m.scrollOffset += pageSize
+		m.scrollOffset = min(maxOffset, m.scrollOffset+pageSize)
 	}
 
 	return m
 }
 
 func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) Model {
+	maxOffset := m.clampedMaxScrollOffset()
+
 	switch msg.Button {
 	case tea.MouseWheelUp:
 		m.scrollOffset = max(0, m.scrollOffset-scrollWheelStep)
 	case tea.MouseWheelDown:
-		m.scrollOffset += scrollWheelStep
+		m.scrollOffset = min(maxOffset, m.scrollOffset+scrollWheelStep)
 	}
 
 	return m
@@ -101,16 +112,9 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	lastTradingDay := data.GetLastTradingDate(time.Now())
+	numRows := (len(group.Funds) + cardsPerRow - 1) / cardsPerRow
 
-	cardWidth := (m.width - cardPaddingWidth) / cardsPerRow
-	if cardWidth < minCardWidth {
-		cardWidth = m.width - cardPaddingWidth
-	}
-
-	rows := m.renderFundRows(group.Funds, cardWidth, lastTradingDay)
-
-	fundIdx := m.fundIndexFromMouse(msg, rows)
+	fundIdx := m.fundIndexFromMouse(msg, numRows)
 	if fundIdx < 0 || fundIdx >= len(group.Funds) {
 		return m, nil
 	}
@@ -146,17 +150,13 @@ func (m Model) isMouseInFundArea(mouseY int) bool {
 	return mouseY >= headerHeight && mouseY < m.height-footerHeight-1
 }
 
-func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, rows []string) int {
-	totalHeight := 0
-	for _, row := range rows {
-		totalHeight += lipgloss.Height(row)
-	}
-
+func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows int) int {
+	totalHeight := numRows * fundCardHeight
 	available := m.availableHeight()
 	headerHeight := lipgloss.Height(RenderGroupSelector(m.groups, m.currentGroup, m.width)) + 1
 	relativeY := msg.Y - headerHeight
 
-	targetRowIdx := m.resolveRowIndex(rows, totalHeight, available, relativeY)
+	targetRowIdx := m.resolveRowIndex(numRows, totalHeight, available, relativeY)
 	if targetRowIdx < 0 {
 		return -1
 	}
@@ -173,76 +173,33 @@ func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, rows []string) int {
 	return fundIdx
 }
 
-func (m Model) resolveRowIndex(rows []string, totalHeight, available, relativeY int) int {
+func (m Model) resolveRowIndex(numRows, totalHeight, available, relativeY int) int {
 	if totalHeight <= available {
-		return m.resolveRowIndexNoScroll(rows, relativeY)
+		return m.resolveRowIndexNoScroll(numRows, relativeY)
 	}
 
-	return m.resolveRowIndexWithScroll(rows, available, relativeY)
+	return m.resolveRowIndexWithScroll(numRows, available, relativeY)
 }
 
-func (m Model) resolveRowIndexNoScroll(rows []string, relativeY int) int {
-	currentY := 0
-
-	for rowIdx, row := range rows {
-		rowHeight := lipgloss.Height(row)
-
-		if relativeY >= currentY && relativeY < currentY+rowHeight {
-			return rowIdx
-		}
-
-		currentY += rowHeight
+func (m Model) resolveRowIndexNoScroll(numRows, relativeY int) int {
+	rowIdx := relativeY / fundCardHeight
+	if rowIdx >= 0 && rowIdx < numRows {
+		return rowIdx
 	}
 
 	return -1
 }
 
-func (m Model) resolveRowIndexWithScroll(rows []string, available, relativeY int) int {
-	adjustedCardWidth := (m.width - scrollbarWidth - (cardsPerRow - 1)) / cardsPerRow
-	if adjustedCardWidth < minCardWidth {
-		adjustedCardWidth = m.width - scrollbarWidth
-	}
-
-	cardWidth := (m.width - cardPaddingWidth) / cardsPerRow
-	if cardWidth < minCardWidth {
-		cardWidth = m.width - cardPaddingWidth
-	}
-
-	if adjustedCardWidth != cardWidth {
-		lastTradingDay := data.GetLastTradingDate(time.Now())
-		group := m.groups[m.currentGroup]
-		rows = m.renderFundRows(group.Funds, adjustedCardWidth, lastTradingDay)
-	}
-
-	allContent := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	allLines := strings.Split(allContent, "\n")
-	totalLines := len(allLines)
-
-	maxOffset := m.calcMaxScrollOffset(totalLines, available)
-	offset := max(0, min(m.scrollOffset, maxOffset))
-
-	if offset > 0 && offset+available > totalLines {
-		offset = maxOffset
-	}
+func (m Model) resolveRowIndexWithScroll(numRows, available, relativeY int) int {
+	totalLines := numRows * fundCardHeight
+	offset := m.clampedScrollOffset(totalLines, available)
 
 	visibleLineIdx := relativeY + offset
-	if visibleLineIdx >= totalLines {
+	if visibleLineIdx >= totalLines || visibleLineIdx < 0 {
 		return -1
 	}
 
-	lineIdx := 0
-
-	for rowIdx, row := range rows {
-		rowHeight := lipgloss.Height(row)
-
-		if visibleLineIdx >= lineIdx && visibleLineIdx < lineIdx+rowHeight {
-			return rowIdx
-		}
-
-		lineIdx += rowHeight
-	}
-
-	return -1
+	return visibleLineIdx / fundCardHeight
 }
 
 func (m Model) resolveColumn(mouseX int) int {
@@ -296,6 +253,7 @@ func (m Model) handleClearCache() (tea.Model, tea.Cmd) {
 
 	m.fetcher.ClearCache()
 	m.fundData = make(map[string]data.FundData)
+	m.cardCache = make(map[string]string)
 	m.loading = true
 	m.errMsg = ""
 
@@ -424,6 +382,7 @@ func (m Model) handleFundsFetched(msg allFundsFetchedMsg) (tea.Model, tea.Cmd) {
 		m.fundData = msg.funds
 		m.errMsg = ""
 		m.lastRefresh = time.Now()
+		m.cardCache = make(map[string]string)
 	}
 
 	return m, nil

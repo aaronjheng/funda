@@ -74,23 +74,50 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.searchCursor = 0
 
 		return m, nil
+	case "c":
+		return m.handleClearCache()
 	case "left", "h":
-		if m.currentGroup > 0 {
-			m.currentGroup--
-			m.scrollOffset = 0
-			m = m.loadGroupCache()
-		}
+		m = m.handlePrevGroup()
 	case "right", "l":
-		if m.currentGroup < len(m.groups)-1 {
-			m.currentGroup++
-			m.scrollOffset = 0
-			m = m.loadGroupCache()
-		}
+		m = m.handleNextGroup()
 	case "up", "k", "down", "j", "pgup", "pgdown":
 		m = m.handleScrollKey(msg.String())
 	}
 
 	return m, nil
+}
+
+func (m Model) handleClearCache() (tea.Model, tea.Cmd) {
+	if m.loading {
+		return m, nil
+	}
+
+	m.fetcher.ClearCache()
+	m.fundData = make(map[string]data.FundData)
+	m.loading = true
+	m.errMsg = ""
+
+	return m, m.fetchAllFundsCmd()
+}
+
+func (m Model) handlePrevGroup() Model {
+	if m.currentGroup > 0 {
+		m.currentGroup--
+		m.scrollOffset = 0
+		m = m.loadGroupCache()
+	}
+
+	return m
+}
+
+func (m Model) handleNextGroup() Model {
+	if m.currentGroup < len(m.groups)-1 {
+		m.currentGroup++
+		m.scrollOffset = 0
+		m = m.loadGroupCache()
+	}
+
+	return m
 }
 
 func (m Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

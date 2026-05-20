@@ -144,6 +144,14 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 	return fund, nil
 }
 
+// ClearCache clears all in-memory and on-disk caches.
+func (f *Fetcher) ClearCache() {
+	f.memCache.Clear()
+	f.etfCache = &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}}
+
+	ClearFundCache()
+}
+
 // SearchFund searches for funds by keyword.
 func (f *Fetcher) SearchFund(ctx context.Context, keyword string) ([]SearchHit, error) {
 	var results []SearchHit

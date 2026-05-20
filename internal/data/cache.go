@@ -68,6 +68,14 @@ func (c *MemoryCache) Get(code string) (FundData, bool) {
 	return entry.data, true
 }
 
+// Clear removes all entries from the memory cache.
+func (c *MemoryCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.items = make(map[string]cacheEntry)
+}
+
 // Set stores FundData in the cache.
 func (c *MemoryCache) Set(code string, data FundData) {
 	c.mu.Lock()
@@ -165,6 +173,22 @@ func LoadFundCache(code string) (FundData, bool) {
 	}
 
 	return fundData, true
+}
+
+// ClearFundCache removes all cached fund data files from disk.
+func ClearFundCache() {
+	dir := cacheDir()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+			_ = os.Remove(filepath.Join(dir, entry.Name()))
+		}
+	}
 }
 
 // SaveFundCache saves FundData to disk for a specific fund code.

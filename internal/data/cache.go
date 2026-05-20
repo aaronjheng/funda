@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/adrg/xdg"
 )
 
 //nolint:gochecknoglobals // timezone lookup is immutable and needed across the package
@@ -124,17 +126,9 @@ func GetLastTradingDate(t time.Time) time.Time {
 }
 
 func cacheDir() string {
-	base := os.Getenv("XDG_CACHE_HOME")
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			base = filepath.Join(home, ".cache")
-		}
-	}
+	dir := filepath.Join(xdg.CacheHome, "funda", "fund_data")
 
-	dir := filepath.Join(base, "funda", "fund_data")
-
-	_ = os.MkdirAll(dir, cacheDirPermissions) //nolint:gosec // path from XDG env + known subdir
+	_ = os.MkdirAll(dir, cacheDirPermissions)
 
 	return dir
 }

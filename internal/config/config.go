@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/adrg/xdg"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -28,17 +29,7 @@ func resolveConfigPath() string {
 		return cwd
 	}
 
-	xdg := os.Getenv("XDG_CONFIG_HOME")
-	if xdg == "" {
-		home, homeErr := os.UserHomeDir()
-		if homeErr == nil {
-			xdg = filepath.Join(home, ".config")
-		}
-	}
-
-	cfg := filepath.Join(xdg, "funda", "funda.yaml")
-
-	_, err = os.Stat(cfg) //nolint:gosec // path is constructed from XDG env + known subdir
+	cfg, err := xdg.SearchConfigFile("funda/funda.yaml")
 	if err == nil {
 		return cfg
 	}

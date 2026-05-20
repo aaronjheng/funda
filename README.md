@@ -8,8 +8,11 @@ See [funda.example.yaml](contrib/funda.example.yaml) for reference.
 
 ### Config File Search Order
 
-1. `./funda.yaml` (current working directory)
-2. `$XDG_CONFIG_HOME/funda/funda.yaml` (defaults to `~/.config/funda/funda.yaml`)
+1. Path specified by `--config` / `-f` flag
+2. `./funda.yaml` (current directory)
+3. `$XDG_CONFIG_HOME/funda/funda.yaml`
+   - Linux: `~/.config/funda/funda.yaml`
+   - macOS: `~/Library/Application Support/funda/funda.yaml`
 
 ### Config Fields
 

@@ -162,32 +162,72 @@ func navIsCurrent(navDate string, lastTradingDay time.Time) bool {
 	return !d.Before(lastTradingDay)
 }
 
-func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) string {
+type groupTabBounds struct {
+	Index  int
+	StartX int
+	EndX   int
+}
+
+func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (string, []groupTabBounds) {
 	if len(groups) == 0 {
-		return ""
+		return "", nil
 	}
 
-	var parts []string
+	type tabInfo struct {
+		raw   string
+		width int
+	}
 
+	tabs := make([]tabInfo, len(groups))
+	totalWidth := 0
 	for idx, group := range groups {
 		label := fmt.Sprintf("%s (%d)", group.Name, len(group.Funds))
-
+		var rendered string
 		if idx == selectedIdx {
-			highlight := lipgloss.NewStyle().
+			rendered = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("15")).
 				Render(label)
-			parts = append(parts, highlight)
 		} else {
-			muted := lipgloss.NewStyle().
+			rendered = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("245")).
 				Render(label)
-			parts = append(parts, muted)
+		}
+		w := lipgloss.Width(rendered)
+		tabs[idx] = tabInfo{raw: rendered, width: w}
+		totalWidth += w
+	}
+
+	gap := 2
+	totalWidth += gap * (len(groups) - 1)
+
+	startX := 0
+	if width > totalWidth {
+		startX = (width - totalWidth) / 2
+	}
+
+	var bounds []groupTabBounds
+	var sb strings.Builder
+	sb.WriteString(strings.Repeat(" ", startX))
+
+	currentX := startX
+	for idx, tab := range tabs {
+		bounds = append(bounds, groupTabBounds{
+			Index:  idx,
+			StartX: currentX,
+			EndX:   currentX + tab.width,
+		})
+		sb.WriteString(tab.raw)
+		currentX += tab.width
+		if idx < len(tabs)-1 {
+			sb.WriteString(strings.Repeat(" ", gap))
+			currentX += gap
 		}
 	}
 
-	content := strings.Join(parts, "  ")
+	content := sb.String()
+	rendered := lipgloss.NewStyle().Width(width).Render(content)
 
-	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(content)
+	return rendered, bounds
 }
 
 func RenderFooter(width int) string {

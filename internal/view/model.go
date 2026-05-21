@@ -121,7 +121,8 @@ func (m Model) View() tea.View {
 
 	var sections []string
 
-	sections = append(sections, RenderGroupSelector(m.groups, m.currentGroup, m.width))
+	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
+	sections = append(sections, selectorStr)
 	sections = append(sections, "")
 
 	group := m.groups[m.currentGroup]
@@ -262,7 +263,8 @@ func (m Model) calcVisibleFundRange(totalFunds, totalHeight, available int) (int
 }
 
 func (m Model) availableHeight() int {
-	fixed := lipgloss.Height(RenderGroupSelector(m.groups, m.currentGroup, m.width)) +
+	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
+	fixed := lipgloss.Height(selectorStr) +
 		lipgloss.Height(m.renderStatusBar()) +
 		lipgloss.Height(RenderFooter(m.width)) + fixedSectionGaps
 

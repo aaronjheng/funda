@@ -105,7 +105,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	selectorStr, bounds := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	selectorHeight := lipgloss.Height(selectorStr)
 
-	if msg.Y < selectorHeight {
+	if msg.Y >= headerTopPadding && msg.Y < headerTopPadding+selectorHeight {
 		for _, b := range bounds {
 			if msg.X >= b.StartX && msg.X < b.EndX {
 				if b.Index != m.currentGroup {
@@ -158,7 +158,7 @@ func (m Model) fundDisplayName(fund config.Fund) string {
 
 func (m Model) isMouseInFundArea(mouseY int) bool {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
-	headerHeight := lipgloss.Height(selectorStr) + 1
+	headerHeight := lipgloss.Height(selectorStr) + 1 + headerTopPadding
 	footerHeight := lipgloss.Height(RenderFooter(m.width))
 
 	return mouseY >= headerHeight && mouseY < m.height-footerHeight-1
@@ -168,7 +168,7 @@ func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows int) int {
 	totalHeight := numRows * fundCardHeight
 	available := m.availableHeight()
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
-	headerHeight := lipgloss.Height(selectorStr) + 1
+	headerHeight := lipgloss.Height(selectorStr) + 1 + headerTopPadding
 	relativeY := msg.Y - headerHeight
 
 	targetRowIdx := m.resolveRowIndex(numRows, totalHeight, available, relativeY)

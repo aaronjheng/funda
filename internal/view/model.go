@@ -20,6 +20,7 @@ const (
 	labelWidth                = 12
 	valueWidthOffset          = 14
 	fixedSectionGaps          = 3
+	headerTopPadding          = 1
 	scrollbarWidth            = 2
 	cardFrameWidth            = 4 // border(2) + horizontal padding(2)
 	clipboardDisplayDuration  = 2 * time.Second
@@ -120,6 +121,8 @@ func (m Model) View() tea.View {
 	}
 
 	var sections []string
+
+	sections = append(sections, "")
 
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	sections = append(sections, selectorStr)
@@ -266,7 +269,7 @@ func (m Model) availableHeight() int {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	fixed := lipgloss.Height(selectorStr) +
 		lipgloss.Height(m.renderStatusBar()) +
-		lipgloss.Height(RenderFooter(m.width)) + fixedSectionGaps
+		lipgloss.Height(RenderFooter(m.width)) + fixedSectionGaps + headerTopPadding
 
 	return max(0, m.height-fixed)
 }

@@ -27,6 +27,7 @@ const (
 	fundCardContentLines      = 4 // title, nav, change, estimate
 	fundCardBorderLines       = 2
 	fundCardHeight            = fundCardContentLines + fundCardBorderLines // 6
+	mainSectionsCap           = 8
 )
 
 type tickMsg time.Time
@@ -129,54 +130,7 @@ func (m Model) View() tea.View {
 		return tea.NewView("Loading...")
 	}
 
-	var sections []string
-
-	sections = append(sections, "")
-
-	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
-	sections = append(sections, selectorStr)
-	sections = append(sections, "")
-
-	group := m.groups[m.currentGroup]
-	lastTradingDay := data.GetLastTradingDate(time.Now())
-
-	numRows := (len(group.Funds) + cardsPerRow - 1) / cardsPerRow
-	totalHeight := numRows * fundCardHeight
-	available := m.availableHeight()
-
-	cardWidth := (m.width - cardPaddingWidth) / cardsPerRow
-	if cardWidth < minCardWidth {
-		cardWidth = m.width - cardPaddingWidth
-	}
-
-	// If content overflows, account for scrollbar width to avoid double rendering
-	if totalHeight > available {
-		cardWidth = (m.width - scrollbarWidth - (cardsPerRow - 1)) / cardsPerRow
-		if cardWidth < minCardWidth {
-			cardWidth = m.width - scrollbarWidth
-		}
-	}
-
-	if len(group.Funds) > 0 {
-		visibleStart, visibleEnd, offset := m.calcVisibleFundRange(len(group.Funds), totalHeight, available)
-		visibleFunds := group.Funds[visibleStart:visibleEnd]
-		rows := m.renderFundRows(visibleFunds, cardWidth, lastTradingDay)
-		sections = append(sections, m.renderScrollableRows(rows, totalHeight, available, offset))
-	} else {
-		noFundsStyle := lipgloss.NewStyle().
-			Width(m.width).
-			Height(m.availableHeight()).
-			Align(lipgloss.Center)
-
-		sections = append(sections, noFundsStyle.Render("No funds in this group"))
-	}
-
-	sections = append(sections, "")
-	sections = append(sections, m.renderStatusBar())
-	sections = append(sections, "")
-	sections = append(sections, RenderFooter(m.width))
-
-	view := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	view := m.renderMain()
 
 	if m.searchMode {
 		overlay := RenderSearchOverlay(
@@ -193,6 +147,68 @@ func (m Model) View() tea.View {
 	v.MouseMode = tea.MouseModeCellMotion
 
 	return v
+}
+
+func (m Model) renderMain() string {
+	sections := make([]string, 0, mainSectionsCap)
+
+	sections = append(sections, "")
+
+	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
+	sections = append(sections, selectorStr, "")
+
+	sections = append(sections, m.renderFundsSection())
+
+	sections = append(sections,
+		"",
+		m.renderStatusBar(),
+		"",
+		RenderFooter(m.width),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (m Model) renderFundsSection() string {
+	group := m.groups[m.currentGroup]
+	lastTradingDay := data.GetLastTradingDate(time.Now())
+
+	numRows := (len(group.Funds) + cardsPerRow - 1) / cardsPerRow
+	totalHeight := numRows * fundCardHeight
+	available := m.availableHeight()
+
+	cardWidth := m.computeCardWidth(totalHeight, available)
+
+	if len(group.Funds) == 0 {
+		return lipgloss.NewStyle().
+			Width(m.width).
+			Height(m.availableHeight()).
+			Align(lipgloss.Center).
+			Render("No funds in this group")
+	}
+
+	visibleStart, visibleEnd, offset := m.calcVisibleFundRange(len(group.Funds), totalHeight, available)
+	visibleFunds := group.Funds[visibleStart:visibleEnd]
+	rows := m.renderFundRows(visibleFunds, cardWidth, lastTradingDay)
+
+	return m.renderScrollableRows(rows, totalHeight, available, offset)
+}
+
+func (m Model) computeCardWidth(totalHeight, available int) int {
+	cardWidth := (m.width - cardPaddingWidth) / cardsPerRow
+	if cardWidth < minCardWidth {
+		cardWidth = m.width - cardPaddingWidth
+	}
+
+	// If content overflows, account for scrollbar width to avoid double rendering
+	if totalHeight > available {
+		cardWidth = (m.width - scrollbarWidth - (cardsPerRow - 1)) / cardsPerRow
+		if cardWidth < minCardWidth {
+			cardWidth = m.width - scrollbarWidth
+		}
+	}
+
+	return cardWidth
 }
 
 func (m Model) renderFundRows(

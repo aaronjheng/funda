@@ -12,16 +12,17 @@ import (
 )
 
 const (
-	fundLabelWidth  = 12
-	fundValueOffset = 14
-	primaryColor    = "#e2e8f0"
-	secondaryColor  = "#64748b"
-	borderColor     = "#334155"
-	positiveColor   = "#ff6b6b"
-	negativeColor   = "#51cf66"
-	accentColor     = "#60a5fa"
-	overlayPaddingX = 2
-	overlayWidthSub = 4
+	fundLabelWidth   = 12
+	fundValueOffset  = 14
+	primaryColor     = "#e2e8f0"
+	secondaryColor   = "#64748b"
+	borderColor      = "#334155"
+	positiveColor    = "#ff6b6b"
+	negativeColor    = "#51cf66"
+	accentColor      = "#60a5fa"
+	overlayPaddingX  = 2
+	overlayWidthSub  = 4
+	tabCenterDivisor = 2
 )
 
 func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time, highlighted bool) string {
@@ -169,26 +170,24 @@ func navIsCurrent(navDate string, lastTradingDay time.Time) bool {
 	return !d.Before(lastTradingDay)
 }
 
-type groupTabBounds struct {
+type GroupTabBounds struct {
 	Index  int
 	StartX int
 	EndX   int
 }
 
-func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (string, []groupTabBounds) {
-	if len(groups) == 0 {
-		return "", nil
-	}
+type tabInfo struct {
+	raw   string
+	width int
+}
 
-	type tabInfo struct {
-		raw   string
-		width int
-	}
-
+func renderGroupTabs(groups []config.Group, selectedIdx int) ([]tabInfo, int) {
 	tabs := make([]tabInfo, len(groups))
 	totalWidth := 0
+
 	for idx, group := range groups {
 		label := fmt.Sprintf("%s (%d)", group.Name, len(group.Funds))
+
 		var rendered string
 		if idx == selectedIdx {
 			rendered = lipgloss.NewStyle().
@@ -199,39 +198,53 @@ func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (str
 				Foreground(lipgloss.Color(secondaryColor)).
 				Render(label)
 		}
+
 		w := lipgloss.Width(rendered)
 		tabs[idx] = tabInfo{raw: rendered, width: w}
 		totalWidth += w
 	}
 
+	return tabs, totalWidth
+}
+
+func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (string, []GroupTabBounds) {
+	if len(groups) == 0 {
+		return "", nil
+	}
+
+	tabs, totalWidth := renderGroupTabs(groups, selectedIdx)
 	gap := 2
 	totalWidth += gap * (len(groups) - 1)
 
 	startX := 0
 	if width > totalWidth {
-		startX = (width - totalWidth) / 2
+		startX = (width - totalWidth) / tabCenterDivisor
 	}
 
-	var bounds []groupTabBounds
-	var sb strings.Builder
-	sb.WriteString(strings.Repeat(" ", startX))
+	bounds := make([]GroupTabBounds, 0, len(tabs))
+
+	var builder strings.Builder
+
+	builder.WriteString(strings.Repeat(" ", startX))
 
 	currentX := startX
+
 	for idx, tab := range tabs {
-		bounds = append(bounds, groupTabBounds{
+		bounds = append(bounds, GroupTabBounds{
 			Index:  idx,
 			StartX: currentX,
 			EndX:   currentX + tab.width,
 		})
-		sb.WriteString(tab.raw)
+		builder.WriteString(tab.raw)
 		currentX += tab.width
+
 		if idx < len(tabs)-1 {
-			sb.WriteString(strings.Repeat(" ", gap))
+			builder.WriteString(strings.Repeat(" ", gap))
 			currentX += gap
 		}
 	}
 
-	content := sb.String()
+	content := builder.String()
 	rendered := lipgloss.NewStyle().Width(width).Render(content)
 
 	return rendered, bounds

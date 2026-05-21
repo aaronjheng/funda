@@ -103,21 +103,8 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	selectorStr, bounds := RenderGroupSelector(m.groups, m.currentGroup, m.width)
-	selectorHeight := lipgloss.Height(selectorStr)
-
-	if msg.Y >= headerTopPadding && msg.Y < headerTopPadding+selectorHeight {
-		for _, b := range bounds {
-			if msg.X >= b.StartX && msg.X < b.EndX {
-				if b.Index != m.currentGroup {
-					m.currentGroup = b.Index
-					m.scrollOffset = 0
-					m = m.loadGroupCache()
-				}
-				return m, nil
-			}
-		}
-		return m, nil
+	if handled, model := m.handleSelectorClick(msg); handled {
+		return model, nil
 	}
 
 	group := m.groups[m.currentGroup]
@@ -144,6 +131,29 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		tea.SetClipboard(code),
 		clearClipboardMsgCmd(),
 	)
+}
+
+func (m Model) handleSelectorClick(msg tea.MouseClickMsg) (bool, Model) {
+	selectorStr, bounds := RenderGroupSelector(m.groups, m.currentGroup, m.width)
+	selectorHeight := lipgloss.Height(selectorStr)
+
+	if msg.Y < headerTopPadding || msg.Y >= headerTopPadding+selectorHeight {
+		return false, m
+	}
+
+	for _, b := range bounds {
+		if msg.X >= b.StartX && msg.X < b.EndX {
+			if b.Index != m.currentGroup {
+				m.currentGroup = b.Index
+				m.scrollOffset = 0
+				m = m.loadGroupCache()
+			}
+
+			return true, m
+		}
+	}
+
+	return true, m
 }
 
 func (m Model) fundDisplayName(fund config.Fund) string {

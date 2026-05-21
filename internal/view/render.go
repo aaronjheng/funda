@@ -14,10 +14,12 @@ import (
 const (
 	fundLabelWidth  = 12
 	fundValueOffset = 14
-	fundLabelColor  = "245"
-	fundBorderColor = "#475569"
+	primaryColor    = "#e2e8f0"
+	secondaryColor  = "#64748b"
+	borderColor     = "#334155"
 	positiveColor   = "#ff6b6b"
 	negativeColor   = "#51cf66"
+	accentColor     = "#60a5fa"
 	overlayPaddingX = 2
 	overlayWidthSub = 4
 )
@@ -32,12 +34,12 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time)
 	changeStr, changeSty := formatDayChange(fundData)
 	estimateStr, estimateSty := formatEstimate(fundData, lastTradingDay)
 
-	labelStyle := lipgloss.NewStyle().Width(fundLabelWidth).Foreground(lipgloss.Color(fundLabelColor))
+	labelStyle := lipgloss.NewStyle().Width(fundLabelWidth).Foreground(lipgloss.Color(secondaryColor))
 	valueMaxWidth := max(0, contentWidth-fundLabelWidth)
 	valueStyle := lipgloss.NewStyle().MaxWidth(valueMaxWidth)
 
 	dateRender := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(fundLabelColor)).
+		Foreground(lipgloss.Color(secondaryColor)).
 		Render(dateStr)
 
 	titleLine := lipgloss.NewStyle().Bold(true).MaxWidth(contentWidth).Render(title)
@@ -60,7 +62,7 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time)
 		lines = append(lines, estimateLine)
 	} else {
 		estLabel := labelStyle.Render("实时估值:")
-		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(fundLabelColor))
+		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 		lines = append(lines, estLabel+mutedStyle.MaxWidth(valueMaxWidth).Render("--"))
 	}
 
@@ -68,7 +70,7 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time)
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(fundBorderColor)).
+		BorderForeground(lipgloss.Color(borderColor)).
 		Padding(0, 1).
 		Width(width).
 		Render(content)
@@ -100,7 +102,7 @@ func formatNAVDate(fundData data.FundData) string {
 
 func formatDayChange(fundData data.FundData) (string, lipgloss.Style) {
 	if fundData.NAV <= 0 || fundData.PrevNAV <= 0 {
-		return "--", lipgloss.NewStyle().Foreground(lipgloss.Color(fundLabelColor))
+		return "--", lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 	}
 
 	pct := fundData.DayChangePercent()
@@ -116,7 +118,7 @@ func formatDayChange(fundData data.FundData) (string, lipgloss.Style) {
 }
 
 func formatEstimate(fundData data.FundData, lastTradingDay time.Time) (string, lipgloss.Style) {
-	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(fundLabelColor))
+	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 
 	if navIsCurrent(fundData.NAVDate, lastTradingDay) {
 		return "", mutedStyle
@@ -145,7 +147,7 @@ func changeStyleFor(pct float64) lipgloss.Style {
 	case pct < 0:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color(negativeColor))
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(fundLabelColor))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 	}
 }
 
@@ -185,11 +187,11 @@ func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (str
 		var rendered string
 		if idx == selectedIdx {
 			rendered = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("15")).
+				Foreground(lipgloss.Color(primaryColor)).
 				Render(label)
 		} else {
 			rendered = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245")).
+				Foreground(lipgloss.Color(secondaryColor)).
 				Render(label)
 		}
 		w := lipgloss.Width(rendered)
@@ -232,7 +234,7 @@ func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (str
 
 func RenderFooter(width int) string {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
+		Foreground(lipgloss.Color(secondaryColor)).
 		Align(lipgloss.Center).
 		Width(width).
 		Render("r refresh | s search | c clear cache | click copy | ↑/↓ scroll | ←/→ group | q quit")
@@ -246,9 +248,9 @@ func RenderStatusBar(msg string, width int, isError bool) string {
 	style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center)
 
 	if isError {
-		style = style.Foreground(lipgloss.Color("#f85149"))
+		style = style.Foreground(lipgloss.Color(positiveColor))
 	} else {
-		style = style.Foreground(lipgloss.Color("245"))
+		style = style.Foreground(lipgloss.Color(secondaryColor))
 	}
 
 	return style.Render(msg)
@@ -268,8 +270,8 @@ func RenderScrollbar(offset, totalLines, trackHeight int) string {
 
 	var builder strings.Builder
 
-	thumbStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	trackStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("239"))
+	thumbStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+	trackStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(borderColor))
 
 	for idx := range trackHeight {
 		if idx >= thumbPos && idx < thumbPos+thumbSize {
@@ -305,12 +307,12 @@ func RenderSearchOverlay(
 		if idx == cursor {
 			highlight := lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("15")).
+				Foreground(lipgloss.Color(primaryColor)).
 				Render("> " + line + "\n")
 			builder.WriteString(highlight)
 		} else {
 			muted := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245")).
+				Foreground(lipgloss.Color(secondaryColor)).
 				Render("  " + line + "\n")
 			builder.WriteString(muted)
 		}
@@ -318,7 +320,7 @@ func RenderSearchOverlay(
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("63")).
+		BorderForeground(lipgloss.Color(accentColor)).
 		Padding(1, overlayPaddingX).
 		Width(width - overlayWidthSub).
 		Render(builder.String())

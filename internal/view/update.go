@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/atotto/clipboard"
 
 	"github.com/aaronjheng/funda/internal/config"
 	"github.com/aaronjheng/funda/internal/data"
@@ -137,15 +136,12 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	}
 
 	code := group.Funds[fundIdx].Code
-
-	err := clipboard.WriteAll(code)
-	if err != nil {
-		return m, nil
-	}
-
 	m.clipboardMsg = "Copied: " + m.fundDisplayName(group.Funds[fundIdx])
 
-	return m, clearClipboardMsgCmd()
+	return m, tea.Batch(
+		tea.SetClipboard(code),
+		clearClipboardMsgCmd(),
+	)
 }
 
 func (m Model) fundDisplayName(fund config.Fund) string {

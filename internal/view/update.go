@@ -44,6 +44,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case clearClipboardMsg:
 		m.clipboardMsg = ""
+		m.copiedCode = ""
 
 		return m, nil
 	}
@@ -137,6 +138,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 
 	code := group.Funds[fundIdx].Code
 	m.clipboardMsg = "Copied: " + m.fundDisplayName(group.Funds[fundIdx])
+	m.copiedCode = code
 
 	return m, tea.Batch(
 		tea.SetClipboard(code),

@@ -61,11 +61,18 @@ type Model struct {
 	lastRefresh   time.Time
 	scrollOffset  int
 	clipboardMsg  string
+	copiedCode    string
 	cardCache     map[string]string
 }
 
-func cardCacheKey(fund config.Fund, fundData data.FundData, cardWidth int, lastTradingDay time.Time) string {
-	return fmt.Sprintf("%s|%d|%s|%s|%v|%v|%s|%v|%s|%s",
+func cardCacheKey(
+	fund config.Fund,
+	fundData data.FundData,
+	cardWidth int,
+	lastTradingDay time.Time,
+	highlighted bool,
+) string {
+	return fmt.Sprintf("%s|%d|%s|%s|%v|%v|%s|%v|%s|%s|%v",
 		fund.Code,
 		cardWidth,
 		fundData.Name,
@@ -76,6 +83,7 @@ func cardCacheKey(fund config.Fund, fundData data.FundData, cardWidth int, lastT
 		fundData.EstimateNAV,
 		fundData.EstimateTime,
 		lastTradingDay.Format("2006-01-02"),
+		highlighted,
 	)
 }
 
@@ -104,6 +112,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
 		lastRefresh:   time.Time{},
 		scrollOffset:  0,
 		clipboardMsg:  "",
+		copiedCode:    "",
 		cardCache:     make(map[string]string),
 	}
 }
@@ -223,14 +232,14 @@ func (m Model) renderFundPair(
 			fundData.Alias = fund.Alias
 		}
 
-		cacheKey := cardCacheKey(fund, fundData, cardWidth, lastTradingDay)
+		cacheKey := cardCacheKey(fund, fundData, cardWidth, lastTradingDay, fund.Code == m.copiedCode)
 		if cached, ok := m.cardCache[cacheKey]; ok {
 			pair = append(pair, cached)
 
 			continue
 		}
 
-		card := RenderFundCard(fundData, cardWidth, lastTradingDay)
+		card := RenderFundCard(fundData, cardWidth, lastTradingDay, fund.Code == m.copiedCode)
 		m.cardCache[cacheKey] = card
 		pair = append(pair, card)
 	}

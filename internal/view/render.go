@@ -24,7 +24,7 @@ const (
 	overlayWidthSub = 4
 )
 
-func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time) string {
+func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time, highlighted bool) string {
 	contentWidth := max(0, width-cardFrameWidth)
 
 	title := formatFundTitle(fundData)
@@ -68,9 +68,14 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time)
 
 	content := strings.Join(lines, "\n")
 
+	borderCol := lipgloss.Color(borderColor)
+	if highlighted {
+		borderCol = lipgloss.Color(accentColor)
+	}
+
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(borderColor)).
+		BorderForeground(borderCol).
 		Padding(0, 1).
 		Width(width).
 		Render(content)

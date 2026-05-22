@@ -169,6 +169,30 @@ func LoadFundCache(code string) (FundData, bool) {
 	return fundData, true
 }
 
+// LoadFundCacheIgnoreTTL loads cached FundData from disk regardless of TTL.
+// It is used on cold start to show stale data before fresh data arrives.
+func LoadFundCacheIgnoreTTL(code string) (FundData, bool) {
+	path := filepath.Join(cacheDir(), code+".json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		var empty FundData
+
+		return empty, false
+	}
+
+	var fundData FundData
+
+	err = json.Unmarshal(data, &fundData)
+	if err != nil {
+		var empty FundData
+
+		return empty, false
+	}
+
+	return fundData, true
+}
+
 // ClearFundCache removes all cached fund data files from disk.
 func ClearFundCache() {
 	dir := cacheDir()

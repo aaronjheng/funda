@@ -95,7 +95,7 @@ func clearClipboardMsgCmd() tea.Cmd {
 }
 
 func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
-	return Model{
+	model := Model{
 		config:        cfg,
 		groups:        cfg.Groups,
 		currentGroup:  0,
@@ -116,6 +116,9 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
 		copiedCode:    "",
 		cardCache:     make(map[string]string),
 	}
+	model = model.loadGroupCacheIgnoreTTL()
+
+	return model
 }
 
 func (m Model) Init() tea.Cmd {

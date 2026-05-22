@@ -438,6 +438,18 @@ func (m Model) loadGroupCache() Model {
 	return m
 }
 
+func (m Model) loadGroupCacheIgnoreTTL() Model {
+	group := m.groups[m.currentGroup]
+	for _, fund := range group.Funds {
+		if cached, ok := data.LoadFundCacheIgnoreTTL(fund.Code); ok {
+			cached.Alias = fund.Alias
+			m.fundData[fund.Code] = cached
+		}
+	}
+
+	return m
+}
+
 func (m Model) addFundToAll(code, name string) Model {
 	for idx := range m.groups {
 		if m.groups[idx].Name == "All" {

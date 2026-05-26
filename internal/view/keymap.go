@@ -7,6 +7,7 @@ type KeyMap struct {
 	Refresh    key.Binding
 	Search     key.Binding
 	ClearCache key.Binding
+	Sort       key.Binding
 	Up         key.Binding
 	Down       key.Binding
 	Left       key.Binding
@@ -19,6 +20,7 @@ func DefaultKeyMap() KeyMap {
 		Refresh:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		Search:     key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "search")),
 		ClearCache: key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear cache")),
+		Sort:       key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "sort")),
 		Up:         key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
 		Down:       key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
 		Left:       key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "prev group")),

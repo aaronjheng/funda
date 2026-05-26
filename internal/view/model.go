@@ -2,6 +2,7 @@ package view
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,6 +29,14 @@ const (
 	fundCardBorderLines       = 2
 	fundCardHeight            = fundCardContentLines + fundCardBorderLines // 6
 	mainSectionsCap           = 8
+)
+
+type SortField int
+
+const (
+	SortDefault SortField = iota
+	SortNAV
+	SortDayChange
 )
 
 type tickMsg time.Time
@@ -64,6 +73,9 @@ type Model struct {
 	clipboardMsg  string
 	copiedCode    string
 	cardCache     map[string]string
+	sortField     SortField
+	sortAsc       bool
+	sortedFunds   []config.Fund
 }
 
 func cardCacheKey(
@@ -115,6 +127,9 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
 		clipboardMsg:  "",
 		copiedCode:    "",
 		cardCache:     make(map[string]string),
+		sortField:     SortDefault,
+		sortAsc:       false,
+		sortedFunds:   nil,
 	}
 	model = model.loadGroupCacheIgnoreTTL()
 
@@ -152,6 +167,105 @@ func (m Model) View() tea.View {
 	return v
 }
 
+func (m Model) sortFieldLabel() string {
+	switch m.sortField {
+	case SortDefault:
+		return ""
+	case SortNAV:
+		return "净值"
+	case SortDayChange:
+		return "日涨跌"
+	}
+
+	return ""
+}
+
+func (m Model) sortFunds() Model {
+	group := m.groups[m.currentGroup]
+	funds := group.Funds
+
+	if m.sortField == SortDefault {
+		m.sortedFunds = funds
+
+		return m
+	}
+
+	sorted := make([]config.Fund, len(funds))
+	copy(sorted, funds)
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		fundI := m.fundData[sorted[i].Code]
+		fundJ := m.fundData[sorted[j].Code]
+
+		var less bool
+
+		switch m.sortField {
+		case SortNAV:
+			less = fundI.NAV < fundJ.NAV
+		case SortDayChange:
+			less = fundI.DayChangePercent() < fundJ.DayChangePercent()
+		case SortDefault:
+			return false
+		}
+
+		if m.sortAsc {
+			return less
+		}
+
+		return !less
+	})
+
+	m.sortedFunds = sorted
+
+	return m
+}
+
+func (m Model) cycleSortMode() Model {
+	switch m.sortField {
+	case SortDefault:
+		m.sortField = SortNAV
+	case SortNAV:
+		m.sortField = SortDayChange
+	case SortDayChange:
+		m.sortField = SortDefault
+	}
+
+	return m.sortFunds()
+}
+
+func (m Model) toggleSortDirection() Model {
+	m.sortAsc = !m.sortAsc
+
+	return m.sortFunds()
+}
+
+func (m Model) handleSortKey() Model {
+	m = m.cycleSortMode()
+	m.scrollOffset = 0
+	m.cardCache = make(map[string]string)
+
+	return m
+}
+
+func (m Model) handleSortDirectionKey() Model {
+	m = m.toggleSortDirection()
+	m.scrollOffset = 0
+	m.cardCache = make(map[string]string)
+
+	return m
+}
+
+func (m Model) handleRefreshKey() (tea.Model, tea.Cmd) {
+	if m.loading {
+		return m, nil
+	}
+
+	m.loading = true
+	m.errMsg = ""
+
+	return m, m.fetchAllFundsCmd()
+}
+
 func (m Model) renderMain() string {
 	sections := make([]string, 0, mainSectionsCap)
 
@@ -173,16 +287,16 @@ func (m Model) renderMain() string {
 }
 
 func (m Model) renderFundsSection() string {
-	group := m.groups[m.currentGroup]
 	lastTradingDay := data.GetLastTradingDate(time.Now())
+	numFunds := len(m.sortedFunds)
 
-	numRows := (len(group.Funds) + cardsPerRow - 1) / cardsPerRow
+	numRows := (numFunds + cardsPerRow - 1) / cardsPerRow
 	totalHeight := numRows * fundCardHeight
 	available := m.availableHeight()
 
 	cardWidth := m.computeCardWidth(totalHeight, available)
 
-	if len(group.Funds) == 0 {
+	if numFunds == 0 {
 		return lipgloss.NewStyle().
 			Width(m.width).
 			Height(m.availableHeight()).
@@ -190,8 +304,8 @@ func (m Model) renderFundsSection() string {
 			Render("No funds in this group")
 	}
 
-	visibleStart, visibleEnd, offset := m.calcVisibleFundRange(len(group.Funds), totalHeight, available)
-	visibleFunds := group.Funds[visibleStart:visibleEnd]
+	visibleStart, visibleEnd, offset := m.calcVisibleFundRange(numFunds, totalHeight, available)
+	visibleFunds := m.sortedFunds[visibleStart:visibleEnd]
 	rows := m.renderFundRows(visibleFunds, cardWidth, lastTradingDay)
 
 	return m.renderScrollableRows(rows, totalHeight, available, offset)
@@ -335,18 +449,29 @@ func (m Model) renderScrollableRows(rows []string, totalHeight, available, offse
 }
 
 func (m Model) renderStatusBar() string {
+	var msg string
+
 	switch {
 	case m.clipboardMsg != "":
-		return RenderStatusBar(m.clipboardMsg, m.width, false)
+		msg = m.clipboardMsg
 	case m.errMsg != "":
 		return RenderStatusBar(m.errMsg, m.width, true)
 	case m.loading:
-		return RenderStatusBar("Loading...", m.width, false)
+		msg = "Loading..."
 	case !m.lastRefresh.IsZero():
-		msg := "Last updated: " + m.lastRefresh.Format("15:04:05")
-
-		return RenderStatusBar(msg, m.width, false)
+		msg = "Last updated: " + m.lastRefresh.Format("15:04:05")
 	default:
 		return ""
 	}
+
+	if m.sortField != SortDefault {
+		dir := "↓"
+		if m.sortAsc {
+			dir = "↑"
+		}
+
+		msg += " | 排序: " + m.sortFieldLabel() + " " + dir
+	}
+
+	return RenderStatusBar(msg, m.width, false)
 }

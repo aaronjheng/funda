@@ -107,8 +107,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return model, nil
 	}
 
-	group := m.groups[m.currentGroup]
-	if len(group.Funds) == 0 {
+	if len(m.sortedFunds) == 0 {
 		return m, nil
 	}
 
@@ -116,15 +115,15 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	numRows := (len(group.Funds) + cardsPerRow - 1) / cardsPerRow
+	numRows := (len(m.sortedFunds) + cardsPerRow - 1) / cardsPerRow
 
 	fundIdx := m.fundIndexFromMouse(msg, numRows)
-	if fundIdx < 0 || fundIdx >= len(group.Funds) {
+	if fundIdx < 0 || fundIdx >= len(m.sortedFunds) {
 		return m, nil
 	}
 
-	code := group.Funds[fundIdx].Code
-	m.clipboardMsg = "Copied: " + m.fundDisplayName(group.Funds[fundIdx])
+	code := m.sortedFunds[fundIdx].Code
+	m.clipboardMsg = "Copied: " + m.fundDisplayName(m.sortedFunds[fundIdx])
 	m.copiedCode = code
 
 	return m, tea.Batch(
@@ -191,9 +190,8 @@ func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows int) int {
 	targetCol := m.resolveColumn(msg.X)
 
 	fundIdx := targetRowIdx*cardsPerRow + targetCol
-	group := m.groups[m.currentGroup]
 
-	if fundIdx >= len(group.Funds) && targetCol > 0 {
+	if fundIdx >= len(m.sortedFunds) && targetCol > 0 {
 		fundIdx = targetRowIdx * cardsPerRow
 	}
 
@@ -247,12 +245,7 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "r":
-		if !m.loading {
-			m.loading = true
-			m.errMsg = ""
-
-			return m, m.fetchAllFundsCmd()
-		}
+		return m.handleRefreshKey()
 	case "s":
 		m.searchMode = true
 		m.searchQuery = ""
@@ -262,6 +255,14 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "c":
 		return m.handleClearCache()
+	case "o":
+		m = m.handleSortKey()
+
+		return m, nil
+	case "O":
+		m = m.handleSortDirectionKey()
+
+		return m, nil
 	case "left", "h":
 		m = m.handlePrevGroup()
 	case "right", "l":
@@ -410,6 +411,7 @@ func (m Model) handleFundsFetched(msg allFundsFetchedMsg) (tea.Model, tea.Cmd) {
 		m.errMsg = ""
 		m.lastRefresh = time.Now()
 		m.cardCache = make(map[string]string)
+		m = m.sortFunds()
 	}
 
 	return m, nil
@@ -435,7 +437,7 @@ func (m Model) loadGroupCache() Model {
 		}
 	}
 
-	return m
+	return m.sortFunds()
 }
 
 func (m Model) loadGroupCacheIgnoreTTL() Model {
@@ -447,7 +449,7 @@ func (m Model) loadGroupCacheIgnoreTTL() Model {
 		}
 	}
 
-	return m
+	return m.sortFunds()
 }
 
 func (m Model) addFundToAll(code, name string) Model {

@@ -5,6 +5,3 @@ groups:
       - code: "006009"
 
 refresh_interval: 60
-
-alerts:
-  highlight_threshold: 2.0

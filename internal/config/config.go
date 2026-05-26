@@ -9,15 +9,13 @@ import (
 )
 
 const (
-	defaultRefreshInterval    = 60
-	defaultHighlightThreshold = 2.0
+	defaultRefreshInterval = 60
 )
 
 func defaultConfig() Config {
 	return Config{
 		Groups:          []Group{{Name: "All", Funds: []Fund{}}},
 		RefreshInterval: defaultRefreshInterval,
-		Alerts:          Alerts{HighlightThreshold: defaultHighlightThreshold},
 	}
 }
 
@@ -70,10 +68,6 @@ func LoadConfig(cfgFilepath string) Config {
 
 	if loaded.RefreshInterval > 0 {
 		cfg.RefreshInterval = loaded.RefreshInterval
-	}
-
-	if loaded.Alerts.HighlightThreshold != 0 {
-		cfg.Alerts.HighlightThreshold = loaded.Alerts.HighlightThreshold
 	}
 
 	cfg.Groups = buildAllGroup(cfg.Groups)

@@ -35,6 +35,7 @@ const (
 	fundCardBorderLines       = 2
 	fundCardHeight            = fundCardContentLines + fundCardBorderLines // 6
 	mainSectionsCap           = 8
+	toastVerticalDiv          = 2
 )
 
 type SortField int
@@ -78,6 +79,7 @@ type Model struct {
 	scrollOffset    int
 	clipboardMsg    string
 	copiedCode      string
+	toastMsg        string
 	cardCache       map[string]string
 	sortField       SortField
 	sortAsc         bool
@@ -135,6 +137,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string) M
 		scrollOffset:    0,
 		clipboardMsg:    "",
 		copiedCode:      "",
+		toastMsg:        "",
 		cardCache:       make(map[string]string),
 		sortField:       SortDefault,
 		sortAsc:         false,
@@ -173,11 +176,116 @@ func (m Model) View() tea.View {
 		view = overlay + "\n" + view
 	}
 
+	if m.toastMsg != "" {
+		view = m.overlayToast(view)
+	}
+
 	v := tea.NewView(view)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 
 	return v
+}
+
+func (m Model) overlayToast(view string) string {
+	toastContent := RenderToast(m.toastMsg)
+	toastLines := strings.Split(toastContent, "\n")
+	toastH := len(toastLines)
+	toastWidth := lipgloss.Width(toastContent)
+
+	viewLines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	totalLines := len(viewLines)
+
+	startLine := max(0, (totalLines-toastH)/toastVerticalDiv)
+	startCol := max(0, (m.width-toastWidth)/toastVerticalDiv)
+
+	for i := 0; i < toastH && startLine+i < totalLines; i++ {
+		viewLines[startLine+i] = overlayLine(viewLines[startLine+i], toastLines[i], startCol, toastWidth)
+	}
+
+	return strings.Join(viewLines, "\n")
+}
+
+type ansiStyle struct {
+	active []string
+}
+
+func (s *ansiStyle) record(seq string, beforeCol bool) {
+	if seq == "\x1b[0m" {
+		s.active = nil
+	} else if beforeCol {
+		s.active = append(s.active, seq)
+	}
+}
+
+func (s *ansiStyle) restore() string {
+	var out strings.Builder
+
+	for _, st := range s.active {
+		out.WriteString(st)
+	}
+
+	return out.String()
+}
+
+func overlayLine(orig, overlay string, startCol, overlayWidth int) string {
+	var (
+		out, esc strings.Builder
+		style    ansiStyle
+	)
+
+	visCol := 0
+	inEsc := false
+	inserted := false
+
+	for _, char := range orig {
+		if char == '\x1b' {
+			inEsc = true
+
+			esc.Reset()
+			esc.WriteRune(char)
+			out.WriteRune(char)
+
+			continue
+		}
+
+		if inEsc {
+			esc.WriteRune(char)
+			out.WriteRune(char)
+
+			if char == 'm' {
+				style.record(esc.String(), visCol < startCol)
+
+				inEsc = false
+
+				esc.Reset()
+			}
+
+			continue
+		}
+
+		if visCol == startCol && !inserted {
+			out.WriteString("\x1b[0m")
+			out.WriteString(overlay)
+			out.WriteString("\x1b[0m")
+			out.WriteString(style.restore())
+
+			inserted = true
+		}
+
+		if visCol < startCol || visCol >= startCol+overlayWidth {
+			out.WriteRune(char)
+		}
+
+		visCol += lipgloss.Width(string(char))
+	}
+
+	if !inserted {
+		out.WriteString("\x1b[0m")
+		out.WriteString(overlay)
+	}
+
+	return out.String()
 }
 
 type persistedState struct {
@@ -566,7 +674,7 @@ func (m Model) renderStatusBar() string {
 	case m.loading:
 		msg = "Loading..."
 	case !m.lastRefresh.IsZero():
-		msg = "Last updated: " + m.lastRefresh.Format("15:04:05")
+		msg = "上次更新: " + m.lastRefresh.Format("15:04:05")
 	}
 
 	if m.sortField != SortDefault {

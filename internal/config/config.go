@@ -14,7 +14,7 @@ const (
 
 func defaultConfig() Config {
 	return Config{
-		Groups:          []Group{{Name: "All", Funds: []Fund{}}},
+		Groups:          []Group{{Name: "全部", Funds: []Fund{}}},
 		RefreshInterval: defaultRefreshInterval,
 	}
 }
@@ -78,11 +78,11 @@ func LoadConfig(cfgFilepath string) Config {
 func buildAllGroup(groups []Group) []Group {
 	var all Group
 
-	all.Name = "All"
+	all.Name = "全部"
 	seen := make(map[string]struct{})
 
 	for _, group := range groups {
-		if group.Name == "All" {
+		if group.Name == "全部" {
 			continue
 		}
 
@@ -98,7 +98,7 @@ func buildAllGroup(groups []Group) []Group {
 	result = append(result, all)
 
 	for _, group := range groups {
-		if group.Name != "All" {
+		if group.Name != "全部" {
 			result = append(result, group)
 		}
 	}

@@ -258,6 +258,23 @@ func RenderFooter(width int) string {
 		Render("r refresh | R reload | s search | o sort | c clear cache | click copy | ↑/↓ scroll | ←/→ group | q quit")
 }
 
+func RenderToast(msg string) string {
+	if msg == "" {
+		return ""
+	}
+
+	content := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(primaryColor)).
+		Bold(true).
+		Render(msg)
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(accentColor)).
+		Padding(0, 1).
+		Render(content)
+}
+
 func RenderStatusBar(msg string, width int, isError bool) string {
 	if msg == "" {
 		return ""

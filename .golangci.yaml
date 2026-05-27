@@ -158,6 +158,9 @@ linters:
       - linters:
           - gosmopolitan
         path: internal/view/
+      - linters:
+          - gosmopolitan
+        path: internal/config/
 formatters:
   enable:
     - gci

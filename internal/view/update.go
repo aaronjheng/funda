@@ -43,6 +43,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSearchResult(msg)
 
 	case clearClipboardMsg:
+		m.toastMsg = ""
 		m.clipboardMsg = ""
 		m.copiedCode = ""
 
@@ -123,7 +124,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	}
 
 	code := m.sortedFunds[fundIdx].Code
-	m.clipboardMsg = "Copied: " + m.fundDisplayName(m.sortedFunds[fundIdx])
+	m.toastMsg = "已复制: " + m.fundDisplayName(m.sortedFunds[fundIdx])
 	m.copiedCode = code
 
 	return m, tea.Batch(
@@ -466,7 +467,7 @@ func (m Model) loadGroupCacheIgnoreTTL() Model {
 
 func (m Model) addFundToAll(code, name string) Model {
 	for idx := range m.groups {
-		if m.groups[idx].Name == "All" {
+		if m.groups[idx].Name == "全部" {
 			for _, fund := range m.groups[idx].Funds {
 				if fund.Code == code {
 					return m

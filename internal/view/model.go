@@ -30,7 +30,7 @@ const (
 	sortStateFilePermissions  = 0o600
 	scrollbarWidth            = 2
 	cardFrameWidth            = 4 // border(2) + horizontal padding(2)
-	clipboardDisplayDuration  = 2 * time.Second
+	clipboardDisplayDuration  = 1 * time.Second
 	fundCardContentLines      = 4 // title, nav, change, estimate
 	fundCardBorderLines       = 2
 	fundCardHeight            = fundCardContentLines + fundCardBorderLines // 6

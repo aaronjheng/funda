@@ -104,8 +104,8 @@ func cardCacheKey(
 		fundData.NAV,
 		fundData.PrevNAV,
 		fundData.NAVDate,
-		fundData.EstimateNAV,
-		fundData.EstimateTime,
+		fundData.LatestNAV,
+		fundData.LatestTime,
 		lastTradingDay.Format("2006-01-02"),
 		highlighted,
 	)

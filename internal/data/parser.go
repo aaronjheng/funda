@@ -7,12 +7,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
 	unquotedKeyRe   = regexp.MustCompile(`([a-zA-Z_]\w*)\s*:`)
 	trailingCommaRe = regexp.MustCompile(`,\s*([}\]])`)
 	jsonpWrapRe     = regexp.MustCompile(`\((.*)\)`)
+	fundNameRe      = regexp.MustCompile(`var\s+fS_name\s*=\s*"([^"]*)";`)
 	netWorthRe      = regexp.MustCompile(`var\s+Data_netWorthTrend\s*=\s*(\[.*?\]);`)
 
 	errInsufficientShowday    = errors.New("insufficient showday data")
@@ -25,8 +27,14 @@ var (
 
 const (
 	minShowdayEntries = 2
-	minDataItems      = 9
+	minDataItems      = 7
 	minRegexpMatches  = 2
+
+	fundRowCodeIndex    = 0
+	fundRowNameIndex    = 1
+	fundRowNAVIndex     = 5
+	fundRowAccNAVIndex  = 6
+	fundRowPrevNAVIndex = 7
 )
 
 // FundRow represents a parsed row from EastMoney bulk data.
@@ -80,20 +88,51 @@ func parseEastMoneyRows(datas [][]json.RawMessage, showday []string) []FundRow {
 
 		var row FundRow
 
-		row.Code = unmarshalString(item[0])
-		row.Name = unmarshalString(item[1])
-		row.NAV = unmarshalFloat(item[3])
-		row.AccNAV = unmarshalFloat(item[4])
-		row.PrevNAV = unmarshalFloat(item[5])
-		row.PrevAccNAV = unmarshalFloat(item[6])
-		row.DayChange = unmarshalFloat(item[7])
-		row.DayPct = unmarshalFloat(item[8])
+		row.Code = unmarshalString(item[fundRowCodeIndex])
+		row.Name = unmarshalString(item[fundRowNameIndex])
+		row.NAV = unmarshalFloat(item[fundRowNAVIndex])
+		row.AccNAV = unmarshalFloat(item[fundRowAccNAVIndex])
+
+		if len(item) > fundRowPrevNAVIndex {
+			row.PrevNAV = unmarshalFloat(item[fundRowPrevNAVIndex])
+			row.DayChange = row.NAV - row.PrevNAV
+			row.DayPct = calculatePercent(row.DayChange, row.PrevNAV)
+		}
+
 		row.NAVDate = showday[0]
 		row.PrevDate = showday[1]
 		rows = append(rows, row)
 	}
 
 	return rows
+}
+
+// FundGZ represents the real-time fund estimate from EastMoney fundgz API.
+type FundGZ struct {
+	FundCode string `json:"fundcode"`
+	Name     string `json:"name"`
+	JZRQ     string `json:"jzrq"`
+	DWJZ     string `json:"dwjz"`
+	GSZ      string `json:"gsz"`
+	GSZZL    string `json:"gszzl"`
+	GZTime   string `json:"gztime"`
+}
+
+// ParseFundGZ parses the EastMoney fundgz JSONP response.
+func ParseFundGZ(text string) (FundGZ, error) {
+	matches := jsonpWrapRe.FindStringSubmatch(text)
+	if len(matches) < minRegexpMatches {
+		return FundGZ{}, errNoJSONPWrapper
+	}
+
+	var fundGZ FundGZ
+
+	err := json.Unmarshal([]byte(matches[1]), &fundGZ)
+	if err != nil {
+		return FundGZ{}, fmt.Errorf("%w: %w", errUnmarshalEastMoney, err)
+	}
+
+	return fundGZ, nil
 }
 
 // ParseSinaETF parses the Sina ETF JSONP response.
@@ -113,21 +152,39 @@ func ParseSinaETF(text string) ([]ETFRow, error) {
 	return rows, nil
 }
 
-// ParseFundInfo extracts net worth trend from EastMoney per-fund JS.
-func ParseFundInfo(text string) ([]NetWorthPoint, error) {
+// ParseFundInfo extracts fund metadata and net worth trend from EastMoney per-fund JS.
+func ParseFundInfo(text string) (FundInfo, error) {
 	matches := netWorthRe.FindStringSubmatch(text)
 	if len(matches) < minRegexpMatches {
-		return nil, errNoNetWorthTrend
+		return FundInfo{}, errNoNetWorthTrend
 	}
 
 	var entries []NetWorthPoint
 
 	err := json.Unmarshal([]byte(matches[1]), &entries)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errUnmarshalNetWorthTrend, err)
+		return FundInfo{}, fmt.Errorf("%w: %w", errUnmarshalNetWorthTrend, err)
 	}
 
-	return entries, nil
+	info := FundInfo{
+		Name:          "",
+		NetWorthTrend: entries,
+	}
+
+	nameMatches := fundNameRe.FindStringSubmatch(text)
+	if len(nameMatches) >= minRegexpMatches {
+		info.Name = nameMatches[1]
+	}
+
+	return info, nil
+}
+
+func formatFundInfoDate(timestamp int64) string {
+	if timestamp <= 0 {
+		return ""
+	}
+
+	return time.UnixMilli(timestamp).In(shanghaiLoc).Format("2006-01-02")
 }
 
 func unmarshalString(raw json.RawMessage) string {
@@ -153,4 +210,12 @@ func unmarshalFloat(raw json.RawMessage) float64 {
 	_ = json.Unmarshal(raw, &value)
 
 	return value
+}
+
+func calculatePercent(change, base float64) float64 {
+	if base == 0 {
+		return 0
+	}
+
+	return change / base * percentFactor
 }

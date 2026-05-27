@@ -58,11 +58,11 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time,
 	}
 
 	if estimateStr != "" {
-		estLabel := labelStyle.Render("实时估值:")
+		estLabel := labelStyle.Render("最新估值:")
 		estimateLine := estLabel + estimateSty.MaxWidth(valueMaxWidth).Render(estimateStr)
 		lines = append(lines, estimateLine)
 	} else {
-		estLabel := labelStyle.Render("实时估值:")
+		estLabel := labelStyle.Render("最新估值:")
 		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 		lines = append(lines, estLabel+mutedStyle.MaxWidth(valueMaxWidth).Render("--"))
 	}
@@ -130,18 +130,23 @@ func formatEstimate(fundData data.FundData, lastTradingDay time.Time) (string, l
 		return "", mutedStyle
 	}
 
-	if fundData.EstimateNAV <= 0 {
+	if fundData.LatestNAV <= 0 {
 		return "--", mutedStyle
 	}
 
-	pct := fundData.EstimateChangePercent()
+	pct := fundData.LatestChangePercent()
 
 	symbol := "+"
 	if pct < 0 {
 		symbol = ""
 	}
 
-	estimateStr := fmt.Sprintf("%.4f (%s%.2f%%)", fundData.EstimateNAV, symbol, pct)
+	estimateStr := fmt.Sprintf("%.4f (%s%.2f%%)", fundData.LatestNAV, symbol, pct)
+
+	if fundData.LatestTime != "" {
+		muted := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor)).Render(" " + fundData.LatestTime)
+		estimateStr += muted
+	}
 
 	return estimateStr, changeStyleFor(pct)
 }

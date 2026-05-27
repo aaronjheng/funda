@@ -12,16 +12,16 @@ type SearchHit struct {
 
 // FundData holds all data for a single fund.
 type FundData struct {
-	Code         string  `json:"code"`
-	Alias        string  `json:"alias"`
-	Name         string  `json:"name"`
-	NAV          float64 `json:"nav"`
-	AccNAV       float64 `json:"acc_nav"`
-	NAVDate      string  `json:"nav_date"`
-	DayChange    float64 `json:"day_change"`
-	EstimateNAV  float64 `json:"estimate_nav"`
-	EstimateTime string  `json:"estimate_time"`
-	PrevNAV      float64 `json:"prev_nav"`
+	Code       string  `json:"code"`
+	Alias      string  `json:"alias"`
+	Name       string  `json:"name"`
+	NAV        float64 `json:"nav"`
+	AccNAV     float64 `json:"acc_nav"`
+	NAVDate    string  `json:"nav_date"`
+	DayChange  float64 `json:"day_change"`
+	LatestNAV  float64 `json:"latest_nav"`
+	LatestTime string  `json:"latest_time"`
+	PrevNAV    float64 `json:"prev_nav"`
 }
 
 // DayChangePercent calculates the daily change percentage.
@@ -33,11 +33,11 @@ func (f FundData) DayChangePercent() float64 {
 	return (f.NAV - f.PrevNAV) / f.PrevNAV * percentFactor
 }
 
-// EstimateChangePercent calculates the estimate change percentage.
-func (f FundData) EstimateChangePercent() float64 {
+// LatestChangePercent calculates the latest change percentage.
+func (f FundData) LatestChangePercent() float64 {
 	if f.NAV == 0 {
 		return 0
 	}
 
-	return (f.EstimateNAV - f.NAV) / f.NAV * percentFactor
+	return (f.LatestNAV - f.NAV) / f.NAV * percentFactor
 }

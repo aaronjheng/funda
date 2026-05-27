@@ -30,11 +30,20 @@ const (
 		"/IO.XSRV2.CallbackList['da_yPT46_Ll7K6WD']" +
 		"/Market_Center.getHQNodeDataSimple" +
 		"?page=1&num=80&sort=changepercent&asc=0&node=etf_hq_fund&_s_r_a=init"
+
+	fundGZURL = "https://fundgz.1234567.com.cn/js/%s.js"
 )
 
 // NetWorthPoint represents a single data point from fund net worth trend.
 type NetWorthPoint struct {
+	X int64   `json:"x"`
 	Y float64 `json:"y"`
+}
+
+// FundInfo represents data extracted from EastMoney per-fund detail.
+type FundInfo struct {
+	Name          string
+	NetWorthTrend []NetWorthPoint
 }
 
 // Fetcher handles HTTP requests and caching for fund data.
@@ -96,13 +105,13 @@ func (f *Fetcher) FetchETFData(ctx context.Context) ([]ETFRow, error) {
 	return rows, nil
 }
 
-// FetchFundInfo fetches per-fund detail for prev NAV fallback.
-func (f *Fetcher) FetchFundInfo(ctx context.Context, code string) ([]NetWorthPoint, error) {
+// FetchFundInfo fetches per-fund detail for NAV fallback.
+func (f *Fetcher) FetchFundInfo(ctx context.Context, code string) (FundInfo, error) {
 	url := fmt.Sprintf("https://fund.eastmoney.com/pingzhongdata/%s.js", code)
 
 	body, err := f.get(ctx, url, f.defaultHeaders)
 	if err != nil {
-		return nil, fmt.Errorf("fetch fund info for %s: %w", code, err)
+		return FundInfo{}, fmt.Errorf("fetch fund info for %s: %w", code, err)
 	}
 
 	return ParseFundInfo(string(body))
@@ -129,10 +138,11 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 	fund.Alias = alias
 
 	f.populateFromBulk(ctx, &fund, code)
+	f.populateFromFundInfo(ctx, &fund, code)
 	f.populatePrevNAV(ctx, &fund, code)
 	f.populateFromETF(ctx, &fund, code)
 
-	if fund.NAV > 0 && IsTradingHours(time.Now()) {
+	if fund.NAV > 0 {
 		f.addEstimate(ctx, &fund, code)
 	}
 
@@ -259,12 +269,40 @@ func (f *Fetcher) populatePrevNAV(ctx context.Context, fund *FundData, code stri
 	}
 
 	info, err := f.FetchFundInfo(ctx, code)
-	if err != nil || len(info) < minFundInfoPoints {
+	if err != nil || len(info.NetWorthTrend) < minFundInfoPoints {
 		return
 	}
 
-	fund.PrevNAV = info[len(info)-2].Y
+	fund.PrevNAV = info.NetWorthTrend[len(info.NetWorthTrend)-2].Y
 	fund.DayChange = fund.NAV - fund.PrevNAV
+}
+
+func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code string) {
+	if fund.NAV > 0 {
+		return
+	}
+
+	info, err := f.FetchFundInfo(ctx, code)
+	if err != nil || len(info.NetWorthTrend) == 0 {
+		return
+	}
+
+	latest := info.NetWorthTrend[len(info.NetWorthTrend)-1]
+	if latest.Y <= 0 {
+		return
+	}
+
+	if fund.Name == "" {
+		fund.Name = info.Name
+	}
+
+	fund.NAV = latest.Y
+	fund.NAVDate = formatFundInfoDate(latest.X)
+
+	if len(info.NetWorthTrend) >= minFundInfoPoints {
+		fund.PrevNAV = info.NetWorthTrend[len(info.NetWorthTrend)-2].Y
+		fund.DayChange = fund.NAV - fund.PrevNAV
+	}
 }
 
 func (f *Fetcher) populateFromETF(ctx context.Context, fund *FundData, code string) {
@@ -288,7 +326,7 @@ func (f *Fetcher) populateFromETF(ctx context.Context, fund *FundData, code stri
 		settle, _ := strconv.ParseFloat(row.Settlement, 64)
 
 		fund.NAV = trade
-		fund.EstimateNAV = trade
+		fund.LatestNAV = trade
 		fund.PrevNAV = settle
 		fund.DayChange = trade - settle
 		fund.NAVDate = time.Now().In(shanghaiLoc).Format("2006-01-02")
@@ -370,6 +408,18 @@ func (f *Fetcher) searchInETFFunds(
 	return results
 }
 
+// fetchFundEstimate fetches the latest fund estimate from EastMoney fundgz API.
+func (f *Fetcher) fetchFundEstimate(ctx context.Context, code string) (FundGZ, error) {
+	url := fmt.Sprintf(fundGZURL, code)
+
+	body, err := f.get(ctx, url, f.defaultHeaders)
+	if err != nil {
+		return FundGZ{}, fmt.Errorf("fetch fund estimate for %s: %w", code, err)
+	}
+
+	return ParseFundGZ(string(body))
+}
+
 func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) {
 	etfRows, err := f.FetchETFData(ctx)
 	if err == nil {
@@ -377,8 +427,8 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 			if strings.HasSuffix(row.Symbol, code) {
 				trade, _ := strconv.ParseFloat(row.Trade, 64)
 				if trade > 0 {
-					fund.EstimateNAV = trade
-					fund.EstimateTime = time.Now().In(shanghaiLoc).Format("15:04:05")
+					fund.LatestNAV = trade
+					fund.LatestTime = time.Now().In(shanghaiLoc).Format("15:04:05")
 
 					return
 				}
@@ -386,25 +436,14 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 		}
 	}
 
-	f.addEstimateFromBulk(ctx, fund, code)
-}
-
-func (f *Fetcher) addEstimateFromBulk(ctx context.Context, fund *FundData, code string) {
-	rows, _, _, err := f.FetchAllFunds(ctx)
+	fundGZ, err := f.fetchFundEstimate(ctx, code)
 	if err != nil {
 		return
 	}
 
-	for _, row := range rows {
-		if row.Code != code {
-			continue
-		}
-
-		if row.DayPct != 0 {
-			fund.EstimateNAV = fund.NAV * (1 + row.DayPct/100)
-			fund.EstimateTime = time.Now().In(shanghaiLoc).Format("15:04:05")
-		}
-
-		return
+	gsz, _ := strconv.ParseFloat(fundGZ.GSZ, 64)
+	if gsz > 0 {
+		fund.LatestNAV = gsz
+		fund.LatestTime = fundGZ.GZTime
 	}
 }

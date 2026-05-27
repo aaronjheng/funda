@@ -31,7 +31,7 @@ const (
 	scrollbarWidth            = 2
 	cardFrameWidth            = 4 // border(2) + horizontal padding(2)
 	clipboardDisplayDuration  = 1 * time.Second
-	fundCardContentLines      = 4 // title, nav, change, estimate
+	fundCardContentLines      = 5 // title, nav, change, estimate, time
 	fundCardBorderLines       = 2
 	fundCardHeight            = fundCardContentLines + fundCardBorderLines // 6
 	mainSectionsCap           = 8

@@ -31,7 +31,6 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time,
 
 	title := formatFundTitle(fundData)
 	navStr := formatNAV(fundData)
-	dateStr := formatNAVDate(fundData)
 
 	changeStr, changeSty := formatDayChange(fundData)
 	estimateStr, estimateSty := formatEstimate(fundData, lastTradingDay)
@@ -40,33 +39,25 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time,
 	valueMaxWidth := max(0, contentWidth-fundLabelWidth)
 	valueStyle := lipgloss.NewStyle().MaxWidth(valueMaxWidth)
 
-	dateRender := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(secondaryColor)).
-		Render(dateStr)
-
 	titleLine := lipgloss.NewStyle().Bold(true).MaxWidth(contentWidth).Render(title)
 
+	navValue := changeSty.Render(navStr + " (" + changeStr + ")")
 	navLine := labelStyle.Render("最新净值:") +
-		valueStyle.Render(navStr+dateRender)
+		valueStyle.MaxWidth(valueMaxWidth).Render(navValue)
 
-	changeLine := labelStyle.Render("日涨跌:") +
-		changeSty.MaxWidth(valueMaxWidth).Render(changeStr)
+	indent := strings.Repeat(" ", fundLabelWidth)
+	dateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 
-	lines := []string{
-		titleLine,
-		navLine,
-		changeLine,
+	dateLine := indent
+	if fundData.NAVDate != "" {
+		dateLine += dateStyle.Render(fundData.NAVDate)
 	}
 
-	if estimateStr != "" {
-		estLabel := labelStyle.Render("最新估值:")
-		estimateLine := estLabel + estimateSty.MaxWidth(valueMaxWidth).Render(estimateStr)
-		lines = append(lines, estimateLine)
-	} else {
-		estLabel := labelStyle.Render("最新估值:")
-		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
-		lines = append(lines, estLabel+mutedStyle.MaxWidth(valueMaxWidth).Render("--"))
-	}
+	lines := make([]string, 0, fundCardContentLines)
+	lines = append(lines, titleLine, navLine, dateLine)
+
+	estimateLine, timeLine := formatEstimateLines(estimateStr, estimateSty, labelStyle, valueMaxWidth, fundData.LatestTime)
+	lines = append(lines, estimateLine, timeLine)
 
 	content := strings.Join(lines, "\n")
 
@@ -97,14 +88,6 @@ func formatNAV(fundData data.FundData) string {
 	}
 
 	return "--"
-}
-
-func formatNAVDate(fundData data.FundData) string {
-	if fundData.NAVDate != "" {
-		return fmt.Sprintf(" (%s)", fundData.NAVDate)
-	}
-
-	return ""
 }
 
 func formatDayChange(fundData data.FundData) (string, lipgloss.Style) {
@@ -144,12 +127,41 @@ func formatEstimate(fundData data.FundData, lastTradingDay time.Time) (string, l
 
 	estimateStr := fmt.Sprintf("%.4f (%s%.2f%%)", fundData.LatestNAV, symbol, pct)
 
-	if fundData.LatestTime != "" {
-		muted := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor)).Render(" " + fundData.LatestTime)
-		estimateStr += muted
+	return estimateStr, changeStyleFor(pct)
+}
+
+func formatEstimateLines(
+	estimateStr string,
+	estimateSty lipgloss.Style,
+	labelStyle lipgloss.Style,
+	valueMaxWidth int,
+	latestTime string,
+) (string, string) {
+	var estimateLine string
+
+	if estimateStr != "" {
+		estLabel := labelStyle.Render("最新估值:")
+		estimateLine = estLabel + estimateSty.MaxWidth(valueMaxWidth).Render(estimateStr)
+	} else {
+		estLabel := labelStyle.Render("最新估值:")
+		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+		estimateLine = estLabel + mutedStyle.MaxWidth(valueMaxWidth).Render("--")
 	}
 
-	return estimateStr, changeStyleFor(pct)
+	var timeLine string
+
+	if latestTime != "" {
+		indent := strings.Repeat(" ", fundLabelWidth)
+		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+
+		if strings.Count(latestTime, ":") == 1 {
+			latestTime += ":00"
+		}
+
+		timeLine = indent + timeStyle.Render(latestTime)
+	}
+
+	return estimateLine, timeLine
 }
 
 func changeStyleFor(pct float64) lipgloss.Style {

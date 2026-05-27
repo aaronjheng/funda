@@ -23,6 +23,7 @@ const (
 	overlayPaddingX  = 2
 	overlayWidthSub  = 4
 	tabCenterDivisor = 2
+	toastMaxWidth    = 60
 )
 
 func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time, highlighted bool) string {
@@ -263,21 +264,45 @@ func RenderFooter(width int) string {
 		Render("r refresh | R reload | s search | o sort | c clear cache | click copy | ↑/↓ scroll | ←/→ group | q quit")
 }
 
-func RenderToast(msg string) string {
+func RenderToast(msg string, _ int) string {
 	if msg == "" {
 		return ""
 	}
 
-	content := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(primaryColor)).
-		Bold(true).
-		Render(msg)
+	msg = truncateWidth(msg, toastMaxWidth)
 
 	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(accentColor)).
-		Padding(0, 1).
-		Render(content)
+		Foreground(lipgloss.Color(primaryColor)).
+		Bold(true).
+		Background(lipgloss.Color("#1e293b")).
+		Padding(1, 1).
+		Render(msg)
+}
+
+func truncateWidth(str string, maxWidth int) string {
+	if lipgloss.Width(str) <= maxWidth {
+		return str
+	}
+
+	var (
+		out   strings.Builder
+		width int
+	)
+
+	for _, char := range str {
+		charWidth := lipgloss.Width(string(char))
+		if width+charWidth > maxWidth-1 {
+			out.WriteString("…")
+
+			break
+		}
+
+		out.WriteRune(char)
+
+		width += charWidth
+	}
+
+	return out.String()
 }
 
 func RenderStatusBar(msg string, width int, isError bool) string {

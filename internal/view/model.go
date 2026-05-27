@@ -35,7 +35,8 @@ const (
 	fundCardBorderLines       = 2
 	fundCardHeight            = fundCardContentLines + fundCardBorderLines // 6
 	mainSectionsCap           = 8
-	toastVerticalDiv          = 2
+	toastVerticalDiv          = 3
+	toastHorizontalDiv        = 2
 )
 
 type SortField int
@@ -188,19 +189,21 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) overlayToast(view string) string {
-	toastContent := RenderToast(m.toastMsg)
+	toastContent := RenderToast(m.toastMsg, m.width)
 	toastLines := strings.Split(toastContent, "\n")
 	toastH := len(toastLines)
-	toastWidth := lipgloss.Width(toastContent)
 
 	viewLines := strings.Split(strings.TrimRight(view, "\n"), "\n")
 	totalLines := len(viewLines)
 
 	startLine := max(0, (totalLines-toastH)/toastVerticalDiv)
-	startCol := max(0, (m.width-toastWidth)/toastVerticalDiv)
 
 	for i := 0; i < toastH && startLine+i < totalLines; i++ {
-		viewLines[startLine+i] = overlayLine(viewLines[startLine+i], toastLines[i], startCol, toastWidth)
+		tLine := toastLines[i]
+		tWidth := lipgloss.Width(tLine)
+		startCol := max(0, (m.width-tWidth)/toastHorizontalDiv)
+
+		viewLines[startLine+i] = overlayLine(viewLines[startLine+i], tLine, startCol, tWidth)
 	}
 
 	return strings.Join(viewLines, "\n")

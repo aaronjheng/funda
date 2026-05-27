@@ -1,13 +1,17 @@
 package view
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/adrg/xdg"
 
 	"github.com/aaronjheng/funda/internal/config"
 	"github.com/aaronjheng/funda/internal/data"
@@ -22,6 +26,8 @@ const (
 	valueWidthOffset          = 14
 	fixedSectionGaps          = 3
 	headerTopPadding          = 1
+	sortStateDirPermissions   = 0o700
+	sortStateFilePermissions  = 0o600
 	scrollbarWidth            = 2
 	cardFrameWidth            = 4 // border(2) + horizontal padding(2)
 	clipboardDisplayDuration  = 2 * time.Second
@@ -138,6 +144,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string) M
 		reloadConfirm:   false,
 	}
 	model = model.loadGroupCacheIgnoreTTL()
+	model = model.loadState()
 
 	return model
 }
@@ -171,6 +178,46 @@ func (m Model) View() tea.View {
 	v.MouseMode = tea.MouseModeCellMotion
 
 	return v
+}
+
+type persistedState struct {
+	SortField SortField `json:"sort_field"`
+	SortAsc   bool      `json:"sort_asc"`
+}
+
+func statePath() string {
+	return filepath.Join(xdg.StateHome, "funda", "state.json")
+}
+
+func (m Model) saveState() {
+	dir := filepath.Dir(statePath())
+	_ = os.MkdirAll(dir, sortStateDirPermissions)
+
+	data, err := json.Marshal(persistedState{SortField: m.sortField, SortAsc: m.sortAsc})
+	if err != nil {
+		return
+	}
+
+	_ = os.WriteFile(statePath(), data, sortStateFilePermissions)
+}
+
+func (m Model) loadState() Model {
+	data, err := os.ReadFile(statePath())
+	if err != nil {
+		return m
+	}
+
+	var state persistedState
+
+	err = json.Unmarshal(data, &state)
+	if err != nil {
+		return m
+	}
+
+	m.sortField = state.SortField
+	m.sortAsc = state.SortAsc
+
+	return m.sortFunds()
 }
 
 func (m Model) sortFieldLabel() string {
@@ -249,6 +296,7 @@ func (m Model) handleSortKey() Model {
 	m = m.cycleSortMode()
 	m.scrollOffset = 0
 	m.cardCache = make(map[string]string)
+	m.saveState()
 
 	return m
 }
@@ -257,6 +305,7 @@ func (m Model) handleSortDirectionKey() Model {
 	m = m.toggleSortDirection()
 	m.scrollOffset = 0
 	m.cardCache = make(map[string]string)
+	m.saveState()
 
 	return m
 }
@@ -318,6 +367,7 @@ func (m Model) handleReloadConfig() (tea.Model, tea.Cmd) {
 	m.sortAsc = false
 	m.hasUnsavedFunds = false
 	m = m.loadGroupCacheIgnoreTTL()
+	m = m.loadState()
 	m.loading = true
 
 	return m, m.fetchAllFundsCmd()
@@ -517,8 +567,6 @@ func (m Model) renderStatusBar() string {
 		msg = "Loading..."
 	case !m.lastRefresh.IsZero():
 		msg = "Last updated: " + m.lastRefresh.Format("15:04:05")
-	default:
-		return ""
 	}
 
 	if m.sortField != SortDefault {
@@ -527,7 +575,15 @@ func (m Model) renderStatusBar() string {
 			dir = "↑"
 		}
 
-		msg += " | 排序: " + m.sortFieldLabel() + " " + dir
+		if msg != "" {
+			msg += " | "
+		}
+
+		msg += "排序: " + m.sortFieldLabel() + " " + dir
+	}
+
+	if msg == "" {
+		return ""
 	}
 
 	return RenderStatusBar(msg, m.width, false)

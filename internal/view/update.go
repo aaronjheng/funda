@@ -241,11 +241,17 @@ func (m Model) resolveColumn(mouseX int) int {
 }
 
 func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.reloadConfirm {
+		return m.handleReloadConfirmKey(msg)
+	}
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "r":
 		return m.handleRefreshKey()
+	case "R":
+		return m.handleReloadKey()
 	case "s":
 		m.searchMode = true
 		m.searchQuery = ""
@@ -255,21 +261,27 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "c":
 		return m.handleClearCache()
-	case "o":
-		m = m.handleSortKey()
+	case "o", "O":
+		m = m.handleSortModeKey(msg.String())
 
 		return m, nil
-	case "O":
-		m = m.handleSortDirectionKey()
-
-		return m, nil
-	case "left", "h":
-		m = m.handlePrevGroup()
-	case "right", "l":
-		m = m.handleNextGroup()
+	case "left", "h", "right", "l":
+		m = m.handleGroupKey(msg.String())
 	case "up", "k", "down", "j", "pgup", "pgdown":
 		m = m.handleScrollKey(msg.String())
 	}
+
+	return m, nil
+}
+
+func (m Model) handleReloadConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	m.reloadConfirm = false
+
+	if msg.String() == "y" || msg.String() == "Y" {
+		return m.handleReloadConfig()
+	}
+
+	m.errMsg = ""
 
 	return m, nil
 }
@@ -462,6 +474,7 @@ func (m Model) addFundToAll(code, name string) Model {
 			}
 
 			m.groups[idx].Funds = append(m.groups[idx].Funds, config.Fund{Code: code, Alias: name})
+			m.hasUnsavedFunds = true
 
 			return m
 		}

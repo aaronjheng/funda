@@ -54,28 +54,31 @@ type searchResultMsg struct {
 type clearClipboardMsg struct{}
 
 type Model struct {
-	config        config.Config
-	groups        []config.Group
-	currentGroup  int
-	fundData      map[string]data.FundData
-	loading       bool
-	errMsg        string
-	width         int
-	height        int
-	fetcher       *data.Fetcher
-	searchMode    bool
-	searchQuery   string
-	searchCursor  int
-	searchResults []data.SearchHit
-	keymap        KeyMap
-	lastRefresh   time.Time
-	scrollOffset  int
-	clipboardMsg  string
-	copiedCode    string
-	cardCache     map[string]string
-	sortField     SortField
-	sortAsc       bool
-	sortedFunds   []config.Fund
+	config          config.Config
+	groups          []config.Group
+	currentGroup    int
+	fundData        map[string]data.FundData
+	loading         bool
+	errMsg          string
+	width           int
+	height          int
+	fetcher         *data.Fetcher
+	searchMode      bool
+	searchQuery     string
+	searchCursor    int
+	searchResults   []data.SearchHit
+	keymap          KeyMap
+	lastRefresh     time.Time
+	scrollOffset    int
+	clipboardMsg    string
+	copiedCode      string
+	cardCache       map[string]string
+	sortField       SortField
+	sortAsc         bool
+	sortedFunds     []config.Fund
+	configFilepath  string
+	hasUnsavedFunds bool
+	reloadConfirm   bool
 }
 
 func cardCacheKey(
@@ -106,30 +109,33 @@ func clearClipboardMsgCmd() tea.Cmd {
 	})
 }
 
-func NewModel(cfg config.Config, fetcher *data.Fetcher) Model {
+func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string) Model {
 	model := Model{
-		config:        cfg,
-		groups:        cfg.Groups,
-		currentGroup:  0,
-		fundData:      make(map[string]data.FundData),
-		loading:       false,
-		errMsg:        "",
-		width:         0,
-		height:        0,
-		fetcher:       fetcher,
-		searchMode:    false,
-		searchQuery:   "",
-		searchCursor:  0,
-		searchResults: nil,
-		keymap:        DefaultKeyMap(),
-		lastRefresh:   time.Time{},
-		scrollOffset:  0,
-		clipboardMsg:  "",
-		copiedCode:    "",
-		cardCache:     make(map[string]string),
-		sortField:     SortDefault,
-		sortAsc:       false,
-		sortedFunds:   nil,
+		config:          cfg,
+		groups:          cfg.Groups,
+		currentGroup:    0,
+		fundData:        make(map[string]data.FundData),
+		loading:         false,
+		errMsg:          "",
+		width:           0,
+		height:          0,
+		fetcher:         fetcher,
+		searchMode:      false,
+		searchQuery:     "",
+		searchCursor:    0,
+		searchResults:   nil,
+		keymap:          DefaultKeyMap(),
+		lastRefresh:     time.Time{},
+		scrollOffset:    0,
+		clipboardMsg:    "",
+		copiedCode:      "",
+		cardCache:       make(map[string]string),
+		sortField:       SortDefault,
+		sortAsc:         false,
+		sortedFunds:     nil,
+		configFilepath:  configFilepath,
+		hasUnsavedFunds: false,
+		reloadConfirm:   false,
 	}
 	model = model.loadGroupCacheIgnoreTTL()
 
@@ -255,6 +261,24 @@ func (m Model) handleSortDirectionKey() Model {
 	return m
 }
 
+func (m Model) handleSortModeKey(key string) Model {
+	switch key {
+	case "o":
+		return m.handleSortKey()
+	default:
+		return m.handleSortDirectionKey()
+	}
+}
+
+func (m Model) handleGroupKey(key string) Model {
+	switch key {
+	case "left", "h":
+		return m.handlePrevGroup()
+	default:
+		return m.handleNextGroup()
+	}
+}
+
 func (m Model) handleRefreshKey() (tea.Model, tea.Cmd) {
 	if m.loading {
 		return m, nil
@@ -262,6 +286,39 @@ func (m Model) handleRefreshKey() (tea.Model, tea.Cmd) {
 
 	m.loading = true
 	m.errMsg = ""
+
+	return m, m.fetchAllFundsCmd()
+}
+
+func (m Model) handleReloadKey() (tea.Model, tea.Cmd) {
+	if m.loading {
+		return m, nil
+	}
+
+	if m.hasUnsavedFunds {
+		m.reloadConfirm = true
+		m.errMsg = "有未保存的基金数据，按 Y 确认重新加载，按其他键取消"
+
+		return m, nil
+	}
+
+	return m.handleReloadConfig()
+}
+
+func (m Model) handleReloadConfig() (tea.Model, tea.Cmd) {
+	cfg := config.LoadConfig(m.configFilepath)
+	m.config = cfg
+	m.groups = cfg.Groups
+	m.currentGroup = 0
+	m.fundData = make(map[string]data.FundData)
+	m.errMsg = ""
+	m.scrollOffset = 0
+	m.cardCache = make(map[string]string)
+	m.sortField = SortDefault
+	m.sortAsc = false
+	m.hasUnsavedFunds = false
+	m = m.loadGroupCacheIgnoreTTL()
+	m.loading = true
 
 	return m, m.fetchAllFundsCmd()
 }

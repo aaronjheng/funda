@@ -9,9 +9,9 @@ import (
 	"github.com/aaronjheng/funda/internal/data"
 )
 
-func Run(cfg config.Config, fetcher *data.Fetcher) error {
+func Run(cfg config.Config, fetcher *data.Fetcher, configFilepath string) error {
 	p := tea.NewProgram(
-		NewModel(cfg, fetcher),
+		NewModel(cfg, fetcher, configFilepath),
 	)
 
 	_, err := p.Run()

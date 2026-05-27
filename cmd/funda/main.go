@@ -14,6 +14,8 @@ import (
 func rootCmd() *cobra.Command {
 	var cfg config.Config
 
+	var cfgFilepath string
+
 	cmd := &cobra.Command{
 		Use:          "funda",
 		Short:        "A terminal UI tool for tracking fund valuation data",
@@ -23,7 +25,9 @@ func rootCmd() *cobra.Command {
 				return nil
 			}
 
-			cfgFilepath, err := cmd.Flags().GetString("config")
+			var err error
+
+			cfgFilepath, err = cmd.Flags().GetString("config")
 			if err != nil {
 				return fmt.Errorf("config flag error: %w", err)
 			}
@@ -35,7 +39,7 @@ func rootCmd() *cobra.Command {
 		RunE: func(_ *cobra.Command, _ []string) error {
 			fetcher := data.NewFetcher()
 
-			return view.Run(cfg, fetcher)
+			return view.Run(cfg, fetcher, cfgFilepath)
 		},
 	}
 

@@ -110,7 +110,7 @@ func formatDayChange(fundData data.FundData) (string, lipgloss.Style) {
 func formatEstimate(fundData data.FundData, lastTradingDay time.Time) (string, lipgloss.Style) {
 	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 
-	if navIsCurrent(fundData.NAVDate, lastTradingDay) {
+	if data.NavIsCurrent(fundData.NAVDate, lastTradingDay) {
 		return "", mutedStyle
 	}
 
@@ -177,19 +177,6 @@ func changeStyleFor(pct float64) lipgloss.Style {
 	default:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 	}
-}
-
-func navIsCurrent(navDate string, lastTradingDay time.Time) bool {
-	if navDate == "" {
-		return false
-	}
-
-	nav, err := time.Parse("2006-01-02", navDate)
-	if err != nil {
-		return false
-	}
-
-	return !nav.Before(lastTradingDay)
 }
 
 type GroupTabBounds struct {

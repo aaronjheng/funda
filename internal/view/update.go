@@ -14,11 +14,7 @@ import (
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		if m.searchMode {
-			return m.handleSearchKey(msg)
-		}
-
-		return m.handleNormalKey(msg)
+		return m.handleKeyPress(msg)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -39,6 +35,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case allFundsFetchedMsg:
 		return m.handleFundsFetched(msg)
 
+	case estimatesFetchedMsg:
+		return m.handleEstimatesFetched(msg)
+
 	case searchResultMsg:
 		return m.handleSearchResult(msg)
 
@@ -51,6 +50,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.searchMode {
+		return m.handleSearchKey(msg)
+	}
+
+	return m.handleNormalKey(msg)
 }
 
 const (
@@ -104,8 +111,8 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if handled, model := m.handleSelectorClick(msg); handled {
-		return model, nil
+	if handled, model, cmd := m.handleSelectorClick(msg); handled {
+		return model, cmd
 	}
 
 	if len(m.sortedFunds) == 0 {
@@ -133,12 +140,12 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	)
 }
 
-func (m Model) handleSelectorClick(msg tea.MouseClickMsg) (bool, Model) {
+func (m Model) handleSelectorClick(msg tea.MouseClickMsg) (bool, Model, tea.Cmd) {
 	selectorStr, bounds := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	selectorHeight := lipgloss.Height(selectorStr)
 
 	if msg.Y < headerTopPadding || msg.Y >= headerTopPadding+selectorHeight {
-		return false, m
+		return false, m, nil
 	}
 
 	for _, b := range bounds {
@@ -146,14 +153,18 @@ func (m Model) handleSelectorClick(msg tea.MouseClickMsg) (bool, Model) {
 			if b.Index != m.currentGroup {
 				m.currentGroup = b.Index
 				m.scrollOffset = 0
-				m = m.loadGroupCache()
+				m.loading = true
+				m.errMsg = ""
+				m.lastFullRefresh = time.Now()
+
+				return true, m, m.fetchAllFundsCmd()
 			}
 
-			return true, m
+			return true, m, nil
 		}
 	}
 
-	return true, m
+	return true, m, nil
 }
 
 func (m Model) fundDisplayName(fund config.Fund) string {
@@ -267,7 +278,11 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 	case "left", "h", "right", "l":
-		m = m.handleGroupKey(msg.String())
+		var cmd tea.Cmd
+
+		m, cmd = m.handleGroupKey(msg.String())
+
+		return m, cmd
 	case "up", "k", "down", "j", "pgup", "pgdown":
 		m = m.handleScrollKey(msg.String())
 	}
@@ -297,28 +312,37 @@ func (m Model) handleClearCache() (tea.Model, tea.Cmd) {
 	m.cardCache = make(map[string]string)
 	m.loading = true
 	m.errMsg = ""
+	m.lastFullRefresh = time.Now()
 
 	return m, m.fetchAllFundsCmd()
 }
 
-func (m Model) handlePrevGroup() Model {
+func (m Model) handlePrevGroup() (Model, tea.Cmd) {
 	if m.currentGroup > 0 {
 		m.currentGroup--
 		m.scrollOffset = 0
 		m = m.loadGroupCache()
+		m.loading = true
+		m.errMsg = ""
+
+		return m, m.fetchAllFundsCmd()
 	}
 
-	return m
+	return m, nil
 }
 
-func (m Model) handleNextGroup() Model {
+func (m Model) handleNextGroup() (Model, tea.Cmd) {
 	if m.currentGroup < len(m.groups)-1 {
 		m.currentGroup++
 		m.scrollOffset = 0
 		m = m.loadGroupCache()
+		m.loading = true
+		m.errMsg = ""
+
+		return m, m.fetchAllFundsCmd()
 	}
 
-	return m
+	return m, nil
 }
 
 func (m Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -401,17 +425,99 @@ func (m Model) handleSearchEnter() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleTick() (tea.Model, tea.Cmd) {
-	if !m.loading && m.config.RefreshInterval > 0 {
-		m.loading = true
-		m.errMsg = ""
-
-		return m, tea.Batch(
-			m.fetchAllFundsCmd(),
-			m.startTickCmd(),
-		)
+	if m.config.RefreshInterval <= 0 {
+		return m, nil
 	}
 
-	return m, m.startTickCmd()
+	if m.loading {
+		return m, m.startTickCmd()
+	}
+
+	now := time.Now()
+	cmds := []tea.Cmd{m.startTickCmd()}
+
+	if m.shouldRefreshNAV(now) {
+		m.lastFullRefresh = now
+		m.loading = true
+		m.errMsg = ""
+		cmds = append(cmds, m.fetchAllFundsCmd())
+	}
+
+	if data.IsTradingHours(now) && len(m.fundData) > 0 {
+		cmds = append(cmds, m.fetchEstimatesCmd())
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) shouldRefreshNAV(now time.Time) bool {
+	if m.lastFullRefresh.IsZero() {
+		return true
+	}
+
+	if !m.anyNAVStale(now) {
+		return false
+	}
+
+	if data.IsTradingDay(now) {
+		local := now.In(data.ShanghaiLocation())
+		if local.Hour() >= 15 && local.Hour() < 22 {
+			return now.Sub(m.lastFullRefresh) >= navPostCloseRefreshInterval
+		}
+	}
+
+	return now.Sub(m.lastFullRefresh) >= navFallbackRefreshInterval
+}
+
+func (m Model) anyNAVStale(now time.Time) bool {
+	if len(m.fundData) == 0 {
+		return true
+	}
+
+	lastTradingDay := data.GetLastTradingDate(now)
+
+	for _, fd := range m.fundData {
+		if fd.IsQDII {
+			continue
+		}
+
+		if !data.NavIsCurrent(fd.NAVDate, lastTradingDay) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m Model) fetchEstimatesCmd() tea.Cmd {
+	return func() tea.Msg {
+		group := m.groups[m.currentGroup]
+
+		codes := make([]string, 0, len(group.Funds))
+		for _, fund := range group.Funds {
+			codes = append(codes, fund.Code)
+		}
+
+		ctx := context.Background()
+		estimates := m.fetcher.RefreshAllEstimates(ctx, codes)
+
+		return estimatesFetchedMsg{estimates: estimates}
+	}
+}
+
+func (m Model) handleEstimatesFetched(msg estimatesFetchedMsg) (tea.Model, tea.Cmd) {
+	for code, est := range msg.estimates {
+		if fd, ok := m.fundData[code]; ok {
+			fd.LatestNAV = est.LatestNAV
+			fd.LatestTime = est.LatestTime
+			m.fundData[code] = fd
+		}
+	}
+
+	m.lastRefresh = time.Now()
+	m.cardCache = make(map[string]string)
+
+	return m, nil
 }
 
 func (m Model) handleFundsFetched(msg allFundsFetchedMsg) (tea.Model, tea.Cmd) {

@@ -18,25 +18,27 @@ import (
 )
 
 const (
-	defaultRefreshIntervalSec = 60
-	cardPaddingWidth          = 2
-	cardsPerRow               = 2
-	minCardWidth              = 20
-	labelWidth                = 12
-	valueWidthOffset          = 14
-	fixedSectionGaps          = 3
-	headerTopPadding          = 1
-	sortStateDirPermissions   = 0o700
-	sortStateFilePermissions  = 0o600
-	scrollbarWidth            = 2
-	cardFrameWidth            = 4 // border(2) + horizontal padding(2)
-	clipboardDisplayDuration  = 1 * time.Second
-	fundCardContentLines      = 5 // title, nav, change, estimate, time
-	fundCardBorderLines       = 2
-	fundCardHeight            = fundCardContentLines + fundCardBorderLines // 6
-	mainSectionsCap           = 8
-	toastVerticalDiv          = 3
-	toastHorizontalDiv        = 2
+	defaultRefreshIntervalSec   = 60
+	navPostCloseRefreshInterval = 5 * time.Minute
+	navFallbackRefreshInterval  = 1 * time.Hour
+	cardPaddingWidth            = 2
+	cardsPerRow                 = 2
+	minCardWidth                = 20
+	labelWidth                  = 12
+	valueWidthOffset            = 14
+	fixedSectionGaps            = 3
+	headerTopPadding            = 1
+	sortStateDirPermissions     = 0o700
+	sortStateFilePermissions    = 0o600
+	scrollbarWidth              = 2
+	cardFrameWidth              = 4 // border(2) + horizontal padding(2)
+	clipboardDisplayDuration    = 1 * time.Second
+	fundCardContentLines        = 5 // title, nav, change, estimate, time
+	fundCardBorderLines         = 2
+	fundCardHeight              = fundCardContentLines + fundCardBorderLines // 6
+	mainSectionsCap             = 8
+	toastVerticalDiv            = 3
+	toastHorizontalDiv          = 2
 )
 
 type SortField int
@@ -52,6 +54,10 @@ type tickMsg time.Time
 type allFundsFetchedMsg struct {
 	funds map[string]data.FundData
 	err   error
+}
+
+type estimatesFetchedMsg struct {
+	estimates map[string]data.EstimateUpdate
 }
 
 type searchResultMsg struct {
@@ -77,6 +83,7 @@ type Model struct {
 	searchResults   []data.SearchHit
 	keymap          KeyMap
 	lastRefresh     time.Time
+	lastFullRefresh time.Time
 	scrollOffset    int
 	clipboardMsg    string
 	copiedCode      string
@@ -135,6 +142,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string) M
 		searchResults:   nil,
 		keymap:          DefaultKeyMap(),
 		lastRefresh:     time.Time{},
+		lastFullRefresh: time.Time{},
 		scrollOffset:    0,
 		clipboardMsg:    "",
 		copiedCode:      "",
@@ -430,7 +438,7 @@ func (m Model) handleSortModeKey(key string) Model {
 	}
 }
 
-func (m Model) handleGroupKey(key string) Model {
+func (m Model) handleGroupKey(key string) (Model, tea.Cmd) {
 	switch key {
 	case "left", "h":
 		return m.handlePrevGroup()
@@ -448,6 +456,7 @@ func (m Model) handleRefreshKey() (tea.Model, tea.Cmd) {
 	m.cardCache = make(map[string]string)
 	m.loading = true
 	m.errMsg = ""
+	m.lastFullRefresh = time.Now()
 
 	return m, m.fetchAllFundsCmd()
 }
@@ -482,6 +491,7 @@ func (m Model) handleReloadConfig() (tea.Model, tea.Cmd) {
 	m = m.loadGroupCacheIgnoreTTL()
 	m = m.loadState()
 	m.loading = true
+	m.lastFullRefresh = time.Now()
 
 	return m, m.fetchAllFundsCmd()
 }

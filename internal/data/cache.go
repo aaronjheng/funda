@@ -136,6 +136,20 @@ func GetLastTradingDate(t time.Time) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, shanghaiLoc)
 }
 
+// NavIsCurrent reports whether the NAV date is on or after the last trading day.
+func NavIsCurrent(navDate string, lastTradingDay time.Time) bool {
+	if navDate == "" {
+		return false
+	}
+
+	nav, err := time.Parse("2006-01-02", navDate)
+	if err != nil {
+		return false
+	}
+
+	return !nav.Before(lastTradingDay)
+}
+
 func cacheDir() string {
 	dir := filepath.Join(xdg.CacheHome, "funda", "fund_data")
 

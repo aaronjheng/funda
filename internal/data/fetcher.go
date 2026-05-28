@@ -117,6 +117,46 @@ func (f *Fetcher) FetchFundInfo(ctx context.Context, code string) (FundInfo, err
 	return ParseFundInfo(string(body))
 }
 
+// EstimateUpdate holds a single fund estimate refresh result.
+type EstimateUpdate struct {
+	LatestNAV  float64
+	LatestTime string
+}
+
+// RefreshAllEstimates fetches estimates for multiple fund codes concurrently.
+// It only updates LatestNAV and LatestTime, without re-fetching NAV data.
+func (f *Fetcher) RefreshAllEstimates(ctx context.Context, codes []string) map[string]EstimateUpdate {
+	etfRows, _ := f.FetchETFData(ctx)
+
+	result := make(map[string]EstimateUpdate)
+
+	var (
+		estMu sync.Mutex
+		group sync.WaitGroup
+	)
+
+	for _, code := range codes {
+		group.Add(1)
+
+		go func(fundCode string) {
+			defer group.Done()
+
+			f.sem <- struct{}{}
+			defer func() { <-f.sem }()
+
+			latestNAV, latestTime := f.refreshEstimate(ctx, fundCode, etfRows)
+
+			estMu.Lock()
+			result[fundCode] = EstimateUpdate{LatestNAV: latestNAV, LatestTime: latestTime}
+			estMu.Unlock()
+		}(code)
+	}
+
+	group.Wait()
+
+	return result
+}
+
 // GetFundDataFull returns complete fund data for a single fund code.
 func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (FundData, error) {
 	if cached, ok := f.memCache.Get(code); ok {
@@ -256,6 +296,7 @@ func (f *Fetcher) populateFromBulk(ctx context.Context, fund *FundData, code str
 			fund.PrevNAV = row.PrevNAV
 			fund.DayChange = row.DayChange
 			fund.NAVDate = navDate
+			fund.IsQDII = strings.Contains(row.Name, "QDII")
 
 			// If the bulk API doesn't have NAV for today, note the previous date
 			// but don't override NAV — let populateFromFundInfo try the per-fund API first.
@@ -411,6 +452,26 @@ func (f *Fetcher) searchInETFFunds(
 	}
 
 	return results
+}
+
+func (f *Fetcher) refreshEstimate(ctx context.Context, code string, etfRows []ETFRow) (float64, string) {
+	for _, row := range etfRows {
+		if strings.HasSuffix(row.Symbol, code) {
+			trade, _ := strconv.ParseFloat(row.Trade, 64)
+			if trade > 0 {
+				return trade, time.Now().In(shanghaiLoc).Format("15:04:05")
+			}
+		}
+	}
+
+	fundGZ, err := f.fetchFundEstimate(ctx, code)
+	if err != nil {
+		return 0, ""
+	}
+
+	gsz, _ := strconv.ParseFloat(fundGZ.GSZ, 64)
+
+	return gsz, fundGZ.GZTime
 }
 
 // fetchFundEstimate fetches the latest fund estimate from EastMoney fundgz API.

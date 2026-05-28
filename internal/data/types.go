@@ -22,6 +22,7 @@ type FundData struct {
 	LatestNAV  float64 `json:"latest_nav"`
 	LatestTime string  `json:"latest_time"`
 	PrevNAV    float64 `json:"prev_nav"`
+	IsQDII     bool    `json:"is_qdii"`
 }
 
 // DayChangePercent calculates the daily change percentage.

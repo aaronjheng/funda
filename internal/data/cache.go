@@ -26,11 +26,12 @@ func ShanghaiLocation() *time.Location {
 }
 
 const (
-	tradingCacheDuration  = 5 * time.Minute
-	offHoursCacheDuration = 12 * time.Hour
-	etfCacheDuration      = 60 * time.Second
-	cacheDirPermissions   = 0o700
-	cacheFilePermissions  = 0o600
+	tradingCacheDuration    = 5 * time.Minute
+	navPublishCacheDuration = 30 * time.Minute
+	offHoursCacheDuration   = 12 * time.Hour
+	etfCacheDuration        = 60 * time.Second
+	cacheDirPermissions     = 0o700
+	cacheFilePermissions    = 0o600
 )
 
 // MemoryCache provides a thread-safe in-memory cache with TTL.
@@ -93,6 +94,14 @@ func cacheTTL() time.Duration {
 		return tradingCacheDuration
 	}
 
+	if IsTradingDay(now) {
+		hour := now.Hour()
+		// After market close (15:00-22:00), refresh every 30 min to pick up NAV publications.
+		if hour >= 15 && hour < 22 {
+			return navPublishCacheDuration
+		}
+	}
+
 	return offHoursCacheDuration
 }
 
@@ -115,14 +124,16 @@ func IsTradingHours(t time.Time) bool {
 	return hour >= 9 && hour < 15
 }
 
-// GetLastTradingDate returns the most recent trading day on or before t.
+// GetLastTradingDate returns the most recent trading day on or before t, at midnight.
 func GetLastTradingDate(t time.Time) time.Time {
 	local := t.In(shanghaiLoc)
 	for !IsTradingDay(local) {
 		local = local.AddDate(0, 0, -1)
 	}
 
-	return local
+	y, m, d := local.Date()
+
+	return time.Date(y, m, d, 0, 0, 0, 0, shanghaiLoc)
 }
 
 func cacheDir() string {

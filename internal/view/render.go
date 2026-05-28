@@ -139,18 +139,18 @@ func formatEstimateLines(
 ) (string, string) {
 	var estimateLine string
 
-	if estimateStr != "" {
+	if estimateStr != "" && estimateStr != "--" {
 		estLabel := labelStyle.Render("最新估值:")
 		estimateLine = estLabel + estimateSty.MaxWidth(valueMaxWidth).Render(estimateStr)
 	} else {
 		estLabel := labelStyle.Render("最新估值:")
 		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
-		estimateLine = estLabel + mutedStyle.MaxWidth(valueMaxWidth).Render("--")
+		estimateLine = estLabel + mutedStyle.MaxWidth(valueMaxWidth).Render("-- (--)")
 	}
 
 	var timeLine string
 
-	if latestTime != "" {
+	if estimateStr != "" && latestTime != "" {
 		indent := strings.Repeat(" ", fundLabelWidth)
 		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 
@@ -159,6 +159,10 @@ func formatEstimateLines(
 		}
 
 		timeLine = indent + timeStyle.Render(latestTime)
+	} else {
+		indent := strings.Repeat(" ", fundLabelWidth)
+		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+		timeLine = indent + mutedStyle.Render("--")
 	}
 
 	return estimateLine, timeLine
@@ -180,12 +184,12 @@ func navIsCurrent(navDate string, lastTradingDay time.Time) bool {
 		return false
 	}
 
-	d, err := time.Parse("2006-01-02", navDate)
+	nav, err := time.Parse("2006-01-02", navDate)
 	if err != nil {
 		return false
 	}
 
-	return !d.Before(lastTradingDay)
+	return !nav.Before(lastTradingDay)
 }
 
 type GroupTabBounds struct {

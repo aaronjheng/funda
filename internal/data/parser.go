@@ -32,9 +32,9 @@ const (
 
 	fundRowCodeIndex    = 0
 	fundRowNameIndex    = 1
-	fundRowNAVIndex     = 5
-	fundRowAccNAVIndex  = 6
-	fundRowPrevNAVIndex = 7
+	fundRowNAVIndex     = 3
+	fundRowAccNAVIndex  = 4
+	fundRowPrevNAVIndex = 5
 )
 
 // FundRow represents a parsed row from EastMoney bulk data.

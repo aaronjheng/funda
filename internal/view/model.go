@@ -444,6 +444,8 @@ func (m Model) handleRefreshKey() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	m.fetcher.ClearCache()
+	m.cardCache = make(map[string]string)
 	m.loading = true
 	m.errMsg = ""
 

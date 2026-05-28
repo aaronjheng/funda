@@ -142,6 +142,12 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 	f.populatePrevNAV(ctx, &fund, code)
 	f.populateFromETF(ctx, &fund, code)
 
+	// Last resort: if all APIs failed, use PrevNAV from the bulk API.
+	if fund.NAV == 0 && fund.PrevNAV > 0 {
+		fund.NAV = fund.PrevNAV
+		fund.PrevNAV = 0
+	}
+
 	if fund.NAV > 0 {
 		f.addEstimate(ctx, &fund, code)
 	}
@@ -251,11 +257,10 @@ func (f *Fetcher) populateFromBulk(ctx context.Context, fund *FundData, code str
 			fund.DayChange = row.DayChange
 			fund.NAVDate = navDate
 
-			// Fallback: if today's NAV is not yet available, use previous day's
-			if fund.NAV == 0 && fund.PrevNAV > 0 {
-				fund.NAV = fund.PrevNAV
+			// If the bulk API doesn't have NAV for today, note the previous date
+			// but don't override NAV — let populateFromFundInfo try the per-fund API first.
+			if fund.NAV == 0 {
 				fund.NAVDate = prevDate
-				fund.PrevNAV = 0
 			}
 
 			return
@@ -439,6 +444,18 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 	fundGZ, err := f.fetchFundEstimate(ctx, code)
 	if err != nil {
 		return
+	}
+
+	if fund.NAV == 0 {
+		dwjz, _ := strconv.ParseFloat(fundGZ.DWJZ, 64)
+		if dwjz > 0 {
+			fund.NAV = dwjz
+			fund.NAVDate = fundGZ.JZRQ
+
+			if fund.PrevNAV > 0 {
+				fund.DayChange = fund.NAV - fund.PrevNAV
+			}
+		}
 	}
 
 	gsz, _ := strconv.ParseFloat(fundGZ.GSZ, 64)

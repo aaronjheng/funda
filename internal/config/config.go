@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/adrg/xdg"
-	"go.yaml.in/yaml/v3"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -39,6 +39,9 @@ func resolveConfigPath() string {
 func LoadConfig(cfgFilepath string) Config {
 	cfg := defaultConfig()
 
+	viperInstance := viper.New()
+	viperInstance.SetDefault("refresh_interval", defaultRefreshInterval)
+
 	var path string
 	if cfgFilepath != "" {
 		path = cfgFilepath
@@ -46,28 +49,18 @@ func LoadConfig(cfgFilepath string) Config {
 		path = resolveConfigPath()
 	}
 
-	if path == "" {
-		return cfg
+	if path != "" {
+		viperInstance.SetConfigFile(path)
+
+		err := viperInstance.ReadInConfig()
+		if err != nil {
+			return cfg
+		}
 	}
 
-	data, err := os.ReadFile(path)
+	err := viperInstance.Unmarshal(&cfg)
 	if err != nil {
 		return cfg
-	}
-
-	var loaded Config
-
-	err = yaml.Unmarshal(data, &loaded)
-	if err != nil {
-		return cfg
-	}
-
-	if len(loaded.Groups) > 0 {
-		cfg.Groups = loaded.Groups
-	}
-
-	if loaded.RefreshInterval > 0 {
-		cfg.RefreshInterval = loaded.RefreshInterval
 	}
 
 	cfg.Groups = buildAllGroup(cfg.Groups)

@@ -2,18 +2,18 @@ package config
 
 // Fund represents a single fund configuration.
 type Fund struct {
-	Code  string `yaml:"code"`
-	Alias string `yaml:"alias"`
+	Code  string `mapstructure:"code"`
+	Alias string `mapstructure:"alias"`
 }
 
 // Group represents a named collection of funds.
 type Group struct {
-	Name  string `yaml:"name"`
-	Funds []Fund `yaml:"funds"`
+	Name  string `mapstructure:"name"`
+	Funds []Fund `mapstructure:"funds"`
 }
 
 // Config holds the full application configuration.
 type Config struct {
-	Groups          []Group `yaml:"groups"`
-	RefreshInterval int     `yaml:"refresh_interval"`
+	Groups          []Group `mapstructure:"groups"`
+	RefreshInterval int     `mapstructure:"refresh_interval"`
 }

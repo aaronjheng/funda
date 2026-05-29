@@ -506,7 +506,15 @@ func (m Model) handleRefreshKey() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.fetcher.ClearCache()
+	group := m.groups[m.currentGroup]
+	codes := make([]string, 0, len(group.Funds))
+
+	for _, fund := range group.Funds {
+		codes = append(codes, fund.Code)
+	}
+
+	m.fetcher.RemoveCachedEntries(codes)
+
 	m.cardCache = make(map[string]string)
 	m.loading = true
 	m.errMsg = ""

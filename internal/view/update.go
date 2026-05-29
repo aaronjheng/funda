@@ -2,6 +2,7 @@ package view
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"charm.land/bubbles/v2/list"
@@ -439,6 +440,16 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 		m.lastFullRefresh = now
 		m.loading = true
 		m.errMsg = ""
+
+		group := m.groups[m.currentGroup]
+		codes := make([]string, 0, len(group.Funds))
+
+		for _, fund := range group.Funds {
+			codes = append(codes, fund.Code)
+		}
+
+		m.fetcher.RemoveCachedEntries(codes)
+
 		cmds = append(cmds, m.fetchAllFundsCmd())
 	}
 
@@ -525,7 +536,8 @@ func (m Model) handleFundsFetched(msg allFundsFetchedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.errMsg = msg.err.Error()
 	} else {
-		m.fundData = msg.funds
+		maps.Copy(m.fundData, msg.funds)
+
 		m.errMsg = ""
 		m.lastRefresh = time.Now()
 		m.cardCache = make(map[string]string)

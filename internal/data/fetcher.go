@@ -208,6 +208,16 @@ func (f *Fetcher) ClearCache() {
 	ClearFundCache()
 }
 
+// RemoveCachedEntries removes only the specified fund codes from both memory and disk cache.
+func (f *Fetcher) RemoveCachedEntries(codes []string) {
+	for _, code := range codes {
+		f.memCache.Remove(code)
+		DeleteFundCache(code)
+	}
+
+	f.etfCache = &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}}
+}
+
 // SearchFund searches for funds by keyword.
 func (f *Fetcher) SearchFund(ctx context.Context, keyword string) ([]SearchHit, error) {
 	var results []SearchHit

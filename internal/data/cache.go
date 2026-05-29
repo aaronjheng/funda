@@ -71,6 +71,14 @@ func (c *MemoryCache) Get(code string) (FundData, bool) {
 	return entry.data, true
 }
 
+// Remove deletes a specific entry from the memory cache.
+func (c *MemoryCache) Remove(code string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.items, code)
+}
+
 // Clear removes all entries from the memory cache.
 func (c *MemoryCache) Clear() {
 	c.mu.Lock()
@@ -232,6 +240,12 @@ func ClearFundCache() {
 			_ = os.Remove(filepath.Join(dir, entry.Name()))
 		}
 	}
+}
+
+// DeleteFundCache removes the cached FundData file from disk.
+func DeleteFundCache(code string) {
+	path := filepath.Join(cacheDir(), code+".json")
+	_ = os.Remove(path)
 }
 
 // SaveFundCache saves FundData to disk for a specific fund code.

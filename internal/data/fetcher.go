@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -52,17 +53,21 @@ type Fetcher struct {
 	sem            chan struct{}
 	memCache       *MemoryCache
 	etfCache       *ETFTickerCache
+	logger         *slog.Logger
 	defaultHeaders map[string]string
 	sinaHeaders    map[string]string
 }
 
 // NewFetcher creates a new Fetcher with default settings.
-func NewFetcher() *Fetcher {
+func NewFetcher(logger *slog.Logger) *Fetcher {
 	return &Fetcher{
 		client:   &http.Client{Timeout: httpClientTimeout},
 		sem:      make(chan struct{}, maxConcurrent),
-		memCache: NewMemoryCache(),
-		etfCache: &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}},
+		memCache: NewMemoryCache(logger),
+		etfCache: &ETFTickerCache{
+			mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}, logger: logger,
+		},
+		logger: logger,
 		defaultHeaders: map[string]string{
 			"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
 			"Referer":    "https://fund.eastmoney.com/",
@@ -76,12 +81,25 @@ func NewFetcher() *Fetcher {
 
 // FetchAllFunds fetches the bulk EastMoney fund data.
 func (f *Fetcher) FetchAllFunds(ctx context.Context) ([]FundRow, string, string, error) {
+	f.logger.Info("fetching eastmoney bulk data")
+
 	body, err := f.get(ctx, eastMoneyBulkURL, f.defaultHeaders)
 	if err != nil {
+		f.logger.Error("fetch eastmoney bulk failed", "error", err)
+
 		return nil, "", "", fmt.Errorf("fetch eastmoney bulk: %w", err)
 	}
 
-	return ParseEastMoneyBulk(string(body))
+	rows, navDate, prevDate, err := ParseEastMoneyBulk(string(body))
+	if err != nil {
+		f.logger.Error("parse eastmoney bulk failed", "error", err)
+
+		return nil, "", "", err
+	}
+
+	f.logger.Info("eastmoney bulk fetched", "funds", len(rows), "nav_date", navDate)
+
+	return rows, navDate, prevDate, nil
 }
 
 // FetchETFData fetches ETF data from Sina Finance.
@@ -90,27 +108,38 @@ func (f *Fetcher) FetchETFData(ctx context.Context) ([]ETFRow, error) {
 		return data, nil
 	}
 
+	f.logger.Info("fetching sina etf data")
+
 	body, err := f.get(ctx, sinaETFURL, f.sinaHeaders)
 	if err != nil {
+		f.logger.Error("fetch sina etf failed", "error", err)
+
 		return nil, fmt.Errorf("fetch sina etf: %w", err)
 	}
 
 	rows, err := ParseSinaETF(string(body))
 	if err != nil {
+		f.logger.Error("parse sina etf failed", "error", err)
+
 		return nil, fmt.Errorf("parse sina etf: %w", err)
 	}
 
 	f.etfCache.Set(rows)
+	f.logger.Info("sina etf fetched", "funds", len(rows))
 
 	return rows, nil
 }
 
 // FetchFundInfo fetches per-fund detail for NAV fallback.
 func (f *Fetcher) FetchFundInfo(ctx context.Context, code string) (FundInfo, error) {
+	f.logger.Debug("fetching per-fund info", "code", code)
+
 	url := fmt.Sprintf("https://fund.eastmoney.com/pingzhongdata/%s.js", code)
 
 	body, err := f.get(ctx, url, f.defaultHeaders)
 	if err != nil {
+		f.logger.Warn("fetch per-fund info failed", "code", code, "error", err)
+
 		return FundInfo{}, fmt.Errorf("fetch fund info for %s: %w", code, err)
 	}
 
@@ -126,6 +155,8 @@ type EstimateUpdate struct {
 // RefreshAllEstimates fetches estimates for multiple fund codes concurrently.
 // It only updates LatestNAV and LatestTime, without re-fetching NAV data.
 func (f *Fetcher) RefreshAllEstimates(ctx context.Context, codes []string) map[string]EstimateUpdate {
+	f.logger.Info("refreshing estimates", "count", len(codes))
+
 	etfRows, _ := f.FetchETFData(ctx)
 
 	result := make(map[string]EstimateUpdate)
@@ -154,6 +185,8 @@ func (f *Fetcher) RefreshAllEstimates(ctx context.Context, codes []string) map[s
 
 	group.Wait()
 
+	f.logger.Info("estimates refreshed", "updated", len(result))
+
 	return result
 }
 
@@ -165,12 +198,14 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 		return cached, nil
 	}
 
-	if cached, ok := LoadFundCache(code); ok {
+	if cached, ok := LoadFundCache(f.logger, code); ok {
 		cached.Alias = alias
 		f.memCache.Set(code, cached)
 
 		return cached, nil
 	}
+
+	f.logger.Info("hydrating fund data", "code", code)
 
 	var fund FundData
 
@@ -186,6 +221,8 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 	if fund.NAV == 0 && fund.PrevNAV > 0 {
 		fund.NAV = fund.PrevNAV
 		fund.PrevNAV = 0
+
+		f.logger.Debug("using prevnav as nav fallback", "code", code)
 	}
 
 	if fund.NAV > 0 {
@@ -194,7 +231,10 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 
 	if fund.NAV > 0 {
 		f.memCache.Set(code, fund)
-		SaveFundCache(fund)
+		SaveFundCache(f.logger, fund)
+		f.logger.Info("fund data hydrated", "code", code, "nav", fund.NAV, "nav_date", fund.NAVDate)
+	} else {
+		f.logger.Warn("fund data hydration incomplete", "code", code)
 	}
 
 	return fund, nil
@@ -202,28 +242,36 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 
 // ClearCache clears all in-memory and on-disk caches.
 func (f *Fetcher) ClearCache() {
-	f.memCache.Clear()
-	f.etfCache = &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}}
+	f.logger.Info("clearing all caches")
 
-	ClearFundCache()
+	f.memCache.Clear()
+	f.etfCache = &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}, logger: f.logger}
+
+	ClearFundCache(f.logger)
 }
 
 // RemoveCachedEntries removes only the specified fund codes from both memory and disk cache.
 func (f *Fetcher) RemoveCachedEntries(codes []string) {
+	f.logger.Info("removing cached entries", "count", len(codes))
+
 	for _, code := range codes {
 		f.memCache.Remove(code)
-		DeleteFundCache(code)
+		DeleteFundCache(f.logger, code)
 	}
 
-	f.etfCache = &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}}
+	f.etfCache = &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}, logger: f.logger}
 }
 
 // SearchFund searches for funds by keyword.
 func (f *Fetcher) SearchFund(ctx context.Context, keyword string) ([]SearchHit, error) {
+	f.logger.Info("searching funds", "keyword", keyword)
+
 	var results []SearchHit
 
 	results = f.searchInBulkFunds(ctx, keyword, results)
 	results = f.searchInETFFunds(ctx, keyword, results)
+
+	f.logger.Info("search completed", "keyword", keyword, "results", len(results))
 
 	return results, nil
 }
@@ -233,6 +281,8 @@ func (f *Fetcher) FetchAllCards(
 	ctx context.Context,
 	funds []struct{ Code, Alias string },
 ) map[string]FundData {
+	f.logger.Info("fetching all cards", "count", len(funds))
+
 	result := make(map[string]FundData)
 
 	var (
@@ -261,10 +311,14 @@ func (f *Fetcher) FetchAllCards(
 
 	group.Wait()
 
+	f.logger.Info("all cards fetched", "fetched", len(result))
+
 	return result
 }
 
 func (f *Fetcher) get(ctx context.Context, url string, headers map[string]string) ([]byte, error) {
+	f.logger.Debug("http request", "url", url)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request for %s: %w", url, err)
@@ -281,6 +335,8 @@ func (f *Fetcher) get(ctx context.Context, url string, headers map[string]string
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		f.logger.Warn("http response not ok", "url", url, "status", resp.StatusCode)
+
 		return nil, fmt.Errorf("%w: %d", errHTTPStatus, resp.StatusCode)
 	}
 
@@ -289,12 +345,16 @@ func (f *Fetcher) get(ctx context.Context, url string, headers map[string]string
 		return nil, fmt.Errorf("read response body: %w", err)
 	}
 
+	f.logger.Debug("http response", "url", url, "bytes", len(body))
+
 	return body, nil
 }
 
 func (f *Fetcher) populateFromBulk(ctx context.Context, fund *FundData, code string) {
 	rows, navDate, prevDate, err := f.FetchAllFunds(ctx)
 	if err != nil {
+		f.logger.Debug("populate from bulk skipped", "code", code, "error", err)
+
 		return
 	}
 
@@ -317,6 +377,8 @@ func (f *Fetcher) populateFromBulk(ctx context.Context, fund *FundData, code str
 			return
 		}
 	}
+
+	f.logger.Debug("fund not found in bulk", "code", code)
 }
 
 func (f *Fetcher) populatePrevNAV(ctx context.Context, fund *FundData, code string) {
@@ -326,11 +388,14 @@ func (f *Fetcher) populatePrevNAV(ctx context.Context, fund *FundData, code stri
 
 	info, err := f.FetchFundInfo(ctx, code)
 	if err != nil || len(info.NetWorthTrend) < minFundInfoPoints {
+		f.logger.Debug("populate prevnav skipped", "code", code)
+
 		return
 	}
 
 	fund.PrevNAV = info.NetWorthTrend[len(info.NetWorthTrend)-2].Y
 	fund.DayChange = fund.NAV - fund.PrevNAV
+	f.logger.Debug("populated prevnav from fund info", "code", code, "prevnav", fund.PrevNAV)
 }
 
 func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code string) {
@@ -340,6 +405,8 @@ func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code
 
 	info, err := f.FetchFundInfo(ctx, code)
 	if err != nil || len(info.NetWorthTrend) == 0 {
+		f.logger.Debug("populate from fund info skipped", "code", code)
+
 		return
 	}
 
@@ -359,6 +426,8 @@ func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code
 		fund.PrevNAV = info.NetWorthTrend[len(info.NetWorthTrend)-2].Y
 		fund.DayChange = fund.NAV - fund.PrevNAV
 	}
+
+	f.logger.Debug("populated from fund info", "code", code, "nav", fund.NAV)
 }
 
 func (f *Fetcher) populateFromETF(ctx context.Context, fund *FundData, code string) {
@@ -368,6 +437,8 @@ func (f *Fetcher) populateFromETF(ctx context.Context, fund *FundData, code stri
 
 	etfRows, err := f.FetchETFData(ctx)
 	if err != nil {
+		f.logger.Debug("populate from etf skipped", "code", code, "error", err)
+
 		return
 	}
 
@@ -386,6 +457,8 @@ func (f *Fetcher) populateFromETF(ctx context.Context, fund *FundData, code stri
 		fund.PrevNAV = settle
 		fund.DayChange = trade - settle
 		fund.NAVDate = time.Now().In(shanghaiLoc).Format("2006-01-02")
+
+		f.logger.Debug("populated from etf", "code", code, "nav", fund.NAV)
 
 		return
 	}
@@ -476,6 +549,8 @@ func (f *Fetcher) refreshEstimate(ctx context.Context, code string, etfRows []ET
 
 	fundGZ, err := f.fetchFundEstimate(ctx, code)
 	if err != nil {
+		f.logger.Debug("estimate refresh failed", "code", code, "error", err)
+
 		return 0, ""
 	}
 
@@ -514,6 +589,8 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 
 	fundGZ, err := f.fetchFundEstimate(ctx, code)
 	if err != nil {
+		f.logger.Debug("add estimate failed", "code", code, "error", err)
+
 		return
 	}
 
@@ -534,4 +611,6 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 		fund.LatestNAV = gsz
 		fund.LatestTime = fundGZ.GZTime
 	}
+
+	f.logger.Debug("estimate added", "code", code, "latest_nav", fund.LatestNAV)
 }

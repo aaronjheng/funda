@@ -8,6 +8,7 @@ import (
 
 	"github.com/aaronjheng/funda/internal/config"
 	"github.com/aaronjheng/funda/internal/data"
+	"github.com/aaronjheng/funda/internal/telemetry/log"
 	"github.com/aaronjheng/funda/internal/view"
 )
 
@@ -37,9 +38,10 @@ func rootCmd() *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			fetcher := data.NewFetcher()
+			logger := log.New()
+			fetcher := data.NewFetcher(logger)
 
-			return view.Run(cfg, fetcher, cfgFilepath)
+			return view.Run(cfg, fetcher, cfgFilepath, logger)
 		},
 	}
 

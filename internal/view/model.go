@@ -3,6 +3,7 @@ package view
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -91,6 +92,7 @@ type Model struct {
 	width            int
 	height           int
 	fetcher          *data.Fetcher
+	logger           *slog.Logger
 	searchMode       bool
 	keymap           KeyMap
 	lastRefresh      time.Time
@@ -140,7 +142,9 @@ func clearClipboardMsgCmd() tea.Cmd {
 	})
 }
 
-func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string) Model {
+func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, logger *slog.Logger) Model {
+	logger.Info("funda starting", "groups", len(cfg.Groups))
+
 	textInput := textinput.New()
 	textInput.Prompt = "Search: "
 	textInput.Placeholder = "fund code or name..."
@@ -172,6 +176,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string) M
 		width:            0,
 		height:           0,
 		fetcher:          fetcher,
+		logger:           logger,
 		searchMode:       false,
 		keymap:           DefaultKeyMap(),
 		lastRefresh:      time.Time{},
@@ -506,6 +511,8 @@ func (m Model) handleRefreshKey() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	m.logger.Info("user triggered manual refresh")
+
 	group := m.groups[m.currentGroup]
 	codes := make([]string, 0, len(group.Funds))
 
@@ -539,6 +546,8 @@ func (m Model) handleReloadKey() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleReloadConfig() (tea.Model, tea.Cmd) {
+	m.logger.Info("reloading config")
+
 	cfg := config.LoadConfig(m.configFilepath)
 	m.config = cfg
 	m.groups = cfg.Groups

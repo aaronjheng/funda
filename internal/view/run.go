@@ -2,6 +2,7 @@ package view
 
 import (
 	"fmt"
+	"log/slog"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -9,9 +10,9 @@ import (
 	"github.com/aaronjheng/funda/internal/data"
 )
 
-func Run(cfg config.Config, fetcher *data.Fetcher, configFilepath string) error {
+func Run(cfg config.Config, fetcher *data.Fetcher, configFilepath string, logger *slog.Logger) error {
 	p := tea.NewProgram(
-		NewModel(cfg, fetcher, configFilepath),
+		NewModel(cfg, fetcher, configFilepath, logger),
 	)
 
 	_, err := p.Run()

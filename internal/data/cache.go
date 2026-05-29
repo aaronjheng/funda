@@ -2,6 +2,7 @@ package data
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,8 +37,9 @@ const (
 
 // MemoryCache provides a thread-safe in-memory cache with TTL.
 type MemoryCache struct {
-	mu    sync.RWMutex
-	items map[string]cacheEntry
+	mu     sync.RWMutex
+	items  map[string]cacheEntry
+	logger *slog.Logger
 }
 
 type cacheEntry struct {
@@ -46,8 +48,8 @@ type cacheEntry struct {
 }
 
 // NewMemoryCache creates a new memory cache.
-func NewMemoryCache() *MemoryCache {
-	return &MemoryCache{mu: sync.RWMutex{}, items: make(map[string]cacheEntry)}
+func NewMemoryCache(logger *slog.Logger) *MemoryCache {
+	return &MemoryCache{mu: sync.RWMutex{}, items: make(map[string]cacheEntry), logger: logger}
 }
 
 // Get retrieves a cached FundData if not expired.
@@ -57,16 +59,22 @@ func (c *MemoryCache) Get(code string) (FundData, bool) {
 
 	entry, ok := c.items[code]
 	if !ok {
+		c.logger.Debug("memory cache miss", "code", code)
+
 		var empty FundData
 
 		return empty, false
 	}
 
 	if time.Since(entry.timestamp) > cacheTTL() {
+		c.logger.Debug("memory cache expired", "code", code)
+
 		var empty FundData
 
 		return empty, false
 	}
+
+	c.logger.Debug("memory cache hit", "code", code)
 
 	return entry.data, true
 }
@@ -77,6 +85,7 @@ func (c *MemoryCache) Remove(code string) {
 	defer c.mu.Unlock()
 
 	delete(c.items, code)
+	c.logger.Debug("memory cache removed", "code", code)
 }
 
 // Clear removes all entries from the memory cache.
@@ -84,7 +93,10 @@ func (c *MemoryCache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	count := len(c.items)
 	c.items = make(map[string]cacheEntry)
+
+	c.logger.Debug("memory cache cleared", "count", count)
 }
 
 // Set stores FundData in the cache.
@@ -93,6 +105,7 @@ func (c *MemoryCache) Set(code string, data FundData) {
 	defer c.mu.Unlock()
 
 	c.items[code] = cacheEntry{data: data, timestamp: time.Now()}
+	c.logger.Debug("memory cache set", "code", code)
 }
 
 // cacheTTL returns the appropriate TTL based on trading hours.
@@ -167,17 +180,21 @@ func cacheDir() string {
 }
 
 // LoadFundCache loads cached FundData from disk for a specific fund code.
-func LoadFundCache(code string) (FundData, bool) {
+func LoadFundCache(logger *slog.Logger, code string) (FundData, bool) {
 	path := filepath.Join(cacheDir(), code+".json")
 
 	info, err := os.Stat(path)
 	if err != nil {
+		logger.Debug("disk cache miss (no file)", "code", code)
+
 		var empty FundData
 
 		return empty, false
 	}
 
 	if time.Since(info.ModTime()) > cacheTTL() {
+		logger.Debug("disk cache expired", "code", code)
+
 		var empty FundData
 
 		return empty, false
@@ -185,6 +202,8 @@ func LoadFundCache(code string) (FundData, bool) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		logger.Warn("disk cache read error", "code", code, "error", err)
+
 		var empty FundData
 
 		return empty, false
@@ -194,21 +213,27 @@ func LoadFundCache(code string) (FundData, bool) {
 
 	err = json.Unmarshal(data, &fundData)
 	if err != nil {
+		logger.Warn("disk cache unmarshal error", "code", code, "error", err)
+
 		var empty FundData
 
 		return empty, false
 	}
+
+	logger.Debug("disk cache hit", "code", code)
 
 	return fundData, true
 }
 
 // LoadFundCacheIgnoreTTL loads cached FundData from disk regardless of TTL.
 // It is used on cold start to show stale data before fresh data arrives.
-func LoadFundCacheIgnoreTTL(code string) (FundData, bool) {
+func LoadFundCacheIgnoreTTL(logger *slog.Logger, code string) (FundData, bool) {
 	path := filepath.Join(cacheDir(), code+".json")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		logger.Debug("disk cache ignore-TTL miss", "code", code)
+
 		var empty FundData
 
 		return empty, false
@@ -218,38 +243,51 @@ func LoadFundCacheIgnoreTTL(code string) (FundData, bool) {
 
 	err = json.Unmarshal(data, &fundData)
 	if err != nil {
+		logger.Warn("disk cache ignore-TTL unmarshal error", "code", code, "error", err)
+
 		var empty FundData
 
 		return empty, false
 	}
 
+	logger.Debug("disk cache ignore-TTL hit", "code", code)
+
 	return fundData, true
 }
 
 // ClearFundCache removes all cached fund data files from disk.
-func ClearFundCache() {
+func ClearFundCache(logger *slog.Logger) {
 	dir := cacheDir()
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		logger.Warn("disk cache clear read dir error", "error", err)
+
 		return
 	}
+
+	count := 0
 
 	for _, entry := range entries {
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
 			_ = os.Remove(filepath.Join(dir, entry.Name()))
+			count++
 		}
 	}
+
+	logger.Info("disk cache cleared", "count", count)
 }
 
 // DeleteFundCache removes the cached FundData file from disk.
-func DeleteFundCache(code string) {
+func DeleteFundCache(logger *slog.Logger, code string) {
 	path := filepath.Join(cacheDir(), code+".json")
 	_ = os.Remove(path)
+
+	logger.Debug("disk cache deleted", "code", code)
 }
 
 // SaveFundCache saves FundData to disk for a specific fund code.
-func SaveFundCache(fundData FundData) {
+func SaveFundCache(logger *slog.Logger, fundData FundData) {
 	if fundData.NAV == 0 {
 		return
 	}
@@ -258,10 +296,14 @@ func SaveFundCache(fundData FundData) {
 
 	data, err := json.MarshalIndent(fundData, "", "  ")
 	if err != nil {
+		logger.Warn("disk cache marshal error", "code", fundData.Code, "error", err)
+
 		return
 	}
 
 	_ = os.WriteFile(path, data, cacheFilePermissions)
+
+	logger.Debug("disk cache saved", "code", fundData.Code)
 }
 
 // ETFTickerCache provides a short-lived cache for ETF bulk data.
@@ -269,6 +311,7 @@ type ETFTickerCache struct {
 	mu        sync.RWMutex
 	data      []ETFRow
 	timestamp time.Time
+	logger    *slog.Logger
 }
 
 // ETFRow represents a single ETF entry from Sina.
@@ -286,8 +329,12 @@ func (c *ETFTickerCache) Get() ([]ETFRow, bool) {
 	defer c.mu.RUnlock()
 
 	if c.data == nil || time.Since(c.timestamp) > etfCacheDuration {
+		c.logger.Debug("etf ticker cache miss")
+
 		return nil, false
 	}
+
+	c.logger.Debug("etf ticker cache hit", "count", len(c.data))
 
 	return c.data, true
 }
@@ -299,4 +346,6 @@ func (c *ETFTickerCache) Set(data []ETFRow) {
 
 	c.data = data
 	c.timestamp = time.Now()
+
+	c.logger.Debug("etf ticker cache set", "count", len(data))
 }

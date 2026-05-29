@@ -160,6 +160,8 @@ func (m Model) handleSelectorClick(msg tea.MouseClickMsg) (bool, Model, tea.Cmd)
 				m.errMsg = ""
 				m.lastFullRefresh = time.Now()
 
+				m.logger.Info("selector clicked to switch group", "group", m.groups[m.currentGroup].Name)
+
 				return true, m, m.fetchAllFundsCmd()
 			}
 
@@ -312,6 +314,8 @@ func (m Model) handleClearCache() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	m.logger.Info("user triggered clear cache")
+
 	m.fetcher.ClearCache()
 	m.fundData = make(map[string]data.FundData)
 	m.cardCache = make(map[string]string)
@@ -330,6 +334,8 @@ func (m Model) handlePrevGroup() (Model, tea.Cmd) {
 		m.loading = true
 		m.errMsg = ""
 
+		m.logger.Info("switched to previous group", "group", m.groups[m.currentGroup].Name)
+
 		return m, m.fetchAllFundsCmd()
 	}
 
@@ -343,6 +349,8 @@ func (m Model) handleNextGroup() (Model, tea.Cmd) {
 		m = m.loadGroupCache()
 		m.loading = true
 		m.errMsg = ""
+
+		m.logger.Info("switched to next group", "group", m.groups[m.currentGroup].Name)
 
 		return m, m.fetchAllFundsCmd()
 	}
@@ -370,6 +378,7 @@ func (m Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) selectSearchResult() (tea.Model, tea.Cmd) {
 	if item := m.searchList.SelectedItem(); item != nil {
 		if si, ok := item.(searchItem); ok {
+			m.logger.Info("search result selected", "code", si.Code, "name", si.Name)
 			m = m.addFundToAll(si.Code, si.Name)
 		}
 	}
@@ -437,6 +446,8 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 	cmds := []tea.Cmd{m.startTickCmd()}
 
 	if m.shouldRefreshNAV(now) {
+		m.logger.Info("tick triggered full refresh")
+
 		m.lastFullRefresh = now
 		m.loading = true
 		m.errMsg = ""
@@ -516,16 +527,21 @@ func (m Model) fetchEstimatesCmd() tea.Cmd {
 }
 
 func (m Model) handleEstimatesFetched(msg estimatesFetchedMsg) (tea.Model, tea.Cmd) {
+	updated := 0
+
 	for code, est := range msg.estimates {
 		if fd, ok := m.fundData[code]; ok {
 			fd.LatestNAV = est.LatestNAV
 			fd.LatestTime = est.LatestTime
 			m.fundData[code] = fd
+			updated++
 		}
 	}
 
 	m.lastRefresh = time.Now()
 	m.cardCache = make(map[string]string)
+
+	m.logger.Debug("estimates applied", "updated", updated)
 
 	return m, nil
 }
@@ -535,6 +551,7 @@ func (m Model) handleFundsFetched(msg allFundsFetchedMsg) (tea.Model, tea.Cmd) {
 
 	if msg.err != nil {
 		m.errMsg = msg.err.Error()
+		m.logger.Error("funds fetch failed", "error", msg.err)
 	} else {
 		maps.Copy(m.fundData, msg.funds)
 
@@ -542,6 +559,8 @@ func (m Model) handleFundsFetched(msg allFundsFetchedMsg) (tea.Model, tea.Cmd) {
 		m.lastRefresh = time.Now()
 		m.cardCache = make(map[string]string)
 		m = m.sortFunds()
+
+		m.logger.Info("funds fetched and applied", "count", len(msg.funds))
 	}
 
 	return m, nil
@@ -569,7 +588,7 @@ func (m Model) handleSearchResult(msg searchResultMsg) (tea.Model, tea.Cmd) {
 func (m Model) loadGroupCache() Model {
 	group := m.groups[m.currentGroup]
 	for _, fund := range group.Funds {
-		if cached, ok := data.LoadFundCache(fund.Code); ok {
+		if cached, ok := data.LoadFundCache(m.logger, fund.Code); ok {
 			cached.Alias = fund.Alias
 			m.fundData[fund.Code] = cached
 		}
@@ -581,7 +600,7 @@ func (m Model) loadGroupCache() Model {
 func (m Model) loadGroupCacheIgnoreTTL() Model {
 	group := m.groups[m.currentGroup]
 	for _, fund := range group.Funds {
-		if cached, ok := data.LoadFundCacheIgnoreTTL(fund.Code); ok {
+		if cached, ok := data.LoadFundCacheIgnoreTTL(m.logger, fund.Code); ok {
 			cached.Alias = fund.Alias
 			m.fundData[fund.Code] = cached
 		}
@@ -601,6 +620,8 @@ func (m Model) addFundToAll(code, name string) Model {
 
 			m.groups[idx].Funds = append(m.groups[idx].Funds, config.Fund{Code: code, Alias: name})
 			m.hasUnsavedFunds = true
+
+			m.logger.Info("fund added to all group", "code", code, "name", name)
 
 			return m
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -20,6 +21,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.scrollOffset = 0
+		m = m.applySearchDimensions()
 
 		return m, nil
 
@@ -266,9 +268,11 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleReloadKey()
 	case "s":
 		m.searchMode = true
-		m.searchQuery = ""
-		m.searchResults = nil
-		m.searchCursor = 0
+		m.textInput.Reset()
+		m.searchList.ResetSelected()
+		m.lastSearchQuery = ""
+		m.searchGeneration = 0
+		m = m.applySearchDimensions()
 
 		return m, nil
 	case "c":
@@ -349,79 +353,74 @@ func (m Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.searchMode = false
-		m.searchQuery = ""
-		m.searchResults = nil
+		m.textInput.Reset()
+		m.lastSearchQuery = ""
+		m.searchGeneration = 0
+		m.searchList.ResetSelected()
 
 		return m, nil
 	case "enter":
-		return m.handleSearchEnter()
+		return m.selectSearchResult()
 	default:
-		return m.handleSearchEditKey(msg.String())
+		return m.handleSearchInput(msg)
 	}
 }
 
-func (m Model) handleSearchEditKey(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "up", "k":
-		m = m.moveSearchCursorUp()
-	case "down", "j":
-		m = m.moveSearchCursorDown()
-	case "backspace":
-		m = m.deleteSearchChar()
-	case "ctrl+u":
-		m.searchQuery = ""
-	default:
-		return m.handleSearchCharInput(key)
-	}
-
-	return m, nil
-}
-
-func (m Model) moveSearchCursorUp() Model {
-	if m.searchCursor > 0 {
-		m.searchCursor--
-	}
-
-	return m
-}
-
-func (m Model) moveSearchCursorDown() Model {
-	if m.searchCursor < len(m.searchResults)-1 {
-		m.searchCursor++
-	}
-
-	return m
-}
-
-func (m Model) deleteSearchChar() Model {
-	if len(m.searchQuery) > 0 {
-		m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
-	}
-
-	return m
-}
-
-func (m Model) handleSearchCharInput(key string) (tea.Model, tea.Cmd) {
-	if len(key) == 1 && key >= " " && key <= "~" {
-		m.searchQuery += key
-
-		return m, m.searchFundCmd(m.searchQuery)
-	}
-
-	return m, nil
-}
-
-func (m Model) handleSearchEnter() (tea.Model, tea.Cmd) {
-	if m.searchCursor >= 0 && m.searchCursor < len(m.searchResults) {
-		result := m.searchResults[m.searchCursor]
-		m = m.addFundToAll(result.Code, result.Name)
+func (m Model) selectSearchResult() (tea.Model, tea.Cmd) {
+	if item := m.searchList.SelectedItem(); item != nil {
+		if si, ok := item.(searchItem); ok {
+			m = m.addFundToAll(si.Code, si.Name)
+		}
 	}
 
 	m.searchMode = false
-	m.searchQuery = ""
-	m.searchResults = nil
+	m.textInput.Reset()
+	m.searchList.ResetSelected()
+	m.lastSearchQuery = ""
 
 	return m, m.fetchAllFundsCmd()
+}
+
+func (m Model) handleSearchInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	m = m.applySearchDimensions()
+
+	var cmds []tea.Cmd
+
+	newTI, tiCmd := m.textInput.Update(msg)
+	m.textInput = newTI
+
+	if tiCmd != nil {
+		cmds = append(cmds, tiCmd)
+	}
+
+	newList, listCmd := m.searchList.Update(msg)
+	m.searchList = newList
+
+	if listCmd != nil {
+		cmds = append(cmds, listCmd)
+	}
+
+	currentQuery := m.textInput.Value()
+	if currentQuery != m.lastSearchQuery {
+		m.lastSearchQuery = currentQuery
+		if len(currentQuery) > 0 {
+			m.searchGeneration++
+			gen := m.searchGeneration
+
+			cmds = append(cmds, m.searchFundCmd(currentQuery, gen))
+		} else {
+			m.searchList.SetItems(nil)
+		}
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) applySearchDimensions() Model {
+	m.textInput.SetWidth(m.width - searchContentPadding)
+	m.searchList.SetSize(m.width-searchContentPadding, m.height-searchOverlayHeightOffset)
+
+	return m
 }
 
 func (m Model) handleTick() (tea.Model, tea.Cmd) {
@@ -537,11 +536,19 @@ func (m Model) handleFundsFetched(msg allFundsFetchedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleSearchResult(msg searchResultMsg) (tea.Model, tea.Cmd) {
+	if msg.generation != m.searchGeneration {
+		return m, nil
+	}
+
 	if msg.err != nil {
 		m.errMsg = msg.err.Error()
 	} else {
-		m.searchResults = msg.results
-		m.searchCursor = 0
+		items := make([]list.Item, len(msg.results))
+		for i, hit := range msg.results {
+			items[i] = searchItem{hit}
+		}
+
+		m.searchList.SetItems(items)
 	}
 
 	return m, nil
@@ -617,11 +624,11 @@ func (m Model) startTickCmd() tea.Cmd {
 	})
 }
 
-func (m Model) searchFundCmd(query string) tea.Cmd {
+func (m Model) searchFundCmd(query string, generation int) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		results, err := m.fetcher.SearchFund(ctx, query)
 
-		return searchResultMsg{results: results, err: err}
+		return searchResultMsg{results: results, err: err, generation: generation}
 	}
 }

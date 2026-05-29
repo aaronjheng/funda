@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/adrg/xdg"
@@ -39,6 +41,9 @@ const (
 	mainSectionsCap             = 8
 	toastVerticalDiv            = 3
 	toastHorizontalDiv          = 2
+	searchContentPadding        = 4 // border(2) + padding(2)
+	searchOverlayBorder         = 2
+	searchOverlayHeightOffset   = 6 // border(2) + padding(2) + margin(2)
 )
 
 type SortField int
@@ -61,40 +66,50 @@ type estimatesFetchedMsg struct {
 }
 
 type searchResultMsg struct {
-	results []data.SearchHit
-	err     error
+	results    []data.SearchHit
+	err        error
+	generation int
 }
 
 type clearClipboardMsg struct{}
 
+type searchItem struct {
+	data.SearchHit
+}
+
+func (i searchItem) Title() string       { return i.Code + "  " + i.Name }
+func (i searchItem) Description() string { return i.Price + "  " + i.Change }
+func (i searchItem) FilterValue() string { return i.Code + i.Name }
+
 type Model struct {
-	config          config.Config
-	groups          []config.Group
-	currentGroup    int
-	fundData        map[string]data.FundData
-	loading         bool
-	errMsg          string
-	width           int
-	height          int
-	fetcher         *data.Fetcher
-	searchMode      bool
-	searchQuery     string
-	searchCursor    int
-	searchResults   []data.SearchHit
-	keymap          KeyMap
-	lastRefresh     time.Time
-	lastFullRefresh time.Time
-	scrollOffset    int
-	clipboardMsg    string
-	copiedCode      string
-	toastMsg        string
-	cardCache       map[string]string
-	sortField       SortField
-	sortAsc         bool
-	sortedFunds     []config.Fund
-	configFilepath  string
-	hasUnsavedFunds bool
-	reloadConfirm   bool
+	config           config.Config
+	groups           []config.Group
+	currentGroup     int
+	fundData         map[string]data.FundData
+	loading          bool
+	errMsg           string
+	width            int
+	height           int
+	fetcher          *data.Fetcher
+	searchMode       bool
+	keymap           KeyMap
+	lastRefresh      time.Time
+	lastFullRefresh  time.Time
+	scrollOffset     int
+	clipboardMsg     string
+	copiedCode       string
+	toastMsg         string
+	cardCache        map[string]string
+	sortField        SortField
+	sortAsc          bool
+	sortedFunds      []config.Fund
+	configFilepath   string
+	hasUnsavedFunds  bool
+	reloadConfirm    bool
+	textInput        textinput.Model
+	searchList       list.Model
+	lastSearchQuery  string
+	searchGeneration int
 }
 
 func cardCacheKey(
@@ -126,34 +141,56 @@ func clearClipboardMsgCmd() tea.Cmd {
 }
 
 func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string) Model {
+	textInput := textinput.New()
+	textInput.Prompt = "Search: "
+	textInput.Placeholder = "fund code or name..."
+	textInput.CharLimit = 20
+
+	delegate := list.NewDefaultDelegate()
+	searchList := list.New([]list.Item{}, delegate, 0, 0)
+	searchList.SetShowHelp(false)
+	searchList.SetShowStatusBar(false)
+	searchList.SetShowTitle(false)
+	searchList.SetShowFilter(false)
+	searchList.SetShowPagination(false)
+	searchList.SetFilteringEnabled(false)
+	searchList.KeyMap.Quit.SetEnabled(false)
+	searchList.KeyMap.ForceQuit.SetEnabled(false)
+	searchList.KeyMap.Filter.SetEnabled(false)
+	searchList.KeyMap.ClearFilter.SetEnabled(false)
+	searchList.KeyMap.ShowFullHelp.SetEnabled(false)
+	searchList.KeyMap.CloseFullHelp.SetEnabled(false)
+	searchList.DisableQuitKeybindings()
+
 	model := Model{
-		config:          cfg,
-		groups:          cfg.Groups,
-		currentGroup:    0,
-		fundData:        make(map[string]data.FundData),
-		loading:         false,
-		errMsg:          "",
-		width:           0,
-		height:          0,
-		fetcher:         fetcher,
-		searchMode:      false,
-		searchQuery:     "",
-		searchCursor:    0,
-		searchResults:   nil,
-		keymap:          DefaultKeyMap(),
-		lastRefresh:     time.Time{},
-		lastFullRefresh: time.Time{},
-		scrollOffset:    0,
-		clipboardMsg:    "",
-		copiedCode:      "",
-		toastMsg:        "",
-		cardCache:       make(map[string]string),
-		sortField:       SortDefault,
-		sortAsc:         false,
-		sortedFunds:     nil,
-		configFilepath:  configFilepath,
-		hasUnsavedFunds: false,
-		reloadConfirm:   false,
+		config:           cfg,
+		groups:           cfg.Groups,
+		currentGroup:     0,
+		fundData:         make(map[string]data.FundData),
+		loading:          false,
+		errMsg:           "",
+		width:            0,
+		height:           0,
+		fetcher:          fetcher,
+		searchMode:       false,
+		keymap:           DefaultKeyMap(),
+		lastRefresh:      time.Time{},
+		lastFullRefresh:  time.Time{},
+		scrollOffset:     0,
+		clipboardMsg:     "",
+		copiedCode:       "",
+		toastMsg:         "",
+		cardCache:        make(map[string]string),
+		sortField:        SortDefault,
+		sortAsc:          false,
+		sortedFunds:      nil,
+		configFilepath:   configFilepath,
+		hasUnsavedFunds:  false,
+		reloadConfirm:    false,
+		textInput:        textInput,
+		searchList:       searchList,
+		lastSearchQuery:  "",
+		searchGeneration: 0,
 	}
 	model = model.loadGroupCacheIgnoreTTL()
 	model = model.loadState()
@@ -173,17 +210,11 @@ func (m Model) View() tea.View {
 		return tea.NewView("Loading...")
 	}
 
-	view := m.renderMain()
-
 	if m.searchMode {
-		overlay := RenderSearchOverlay(
-			m.searchQuery,
-			m.searchResults,
-			m.searchCursor,
-			m.width,
-		)
-		view = overlay + "\n" + view
+		return m.renderSearchView()
 	}
+
+	view := m.renderMain()
 
 	if m.toastMsg != "" {
 		view = m.overlayToast(view)
@@ -192,6 +223,29 @@ func (m Model) View() tea.View {
 	v := tea.NewView(view)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
+
+	return v
+}
+
+func (m Model) renderSearchView() tea.View {
+	m.textInput.SetWidth(m.width - searchContentPadding)
+	m.searchList.SetSize(m.width-searchContentPadding, m.height-searchOverlayHeightOffset)
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		m.textInput.View(),
+		m.searchList.View(),
+	)
+
+	styled := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color(accentColor)).
+		Padding(1, 1).
+		Width(m.width - searchOverlayBorder).
+		Height(m.height - 1).
+		Render(content)
+
+	v := tea.NewView(styled)
+	v.AltScreen = true
 
 	return v
 }

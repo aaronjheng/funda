@@ -30,8 +30,6 @@ const (
 	minCardWidth                = 20
 	labelWidth                  = 12
 	valueWidthOffset            = 14
-	fixedSectionGaps            = 3
-	headerTopPadding            = 1
 	sortStateDirPermissions     = 0o700
 	sortStateFilePermissions    = 0o600
 	cardFrameWidth              = 4 // border(2) + horizontal padding(2)
@@ -638,9 +636,7 @@ func (m Model) renderFundPair(
 
 func (m Model) availableHeight() int {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
-	fixed := lipgloss.Height(selectorStr) +
-		lipgloss.Height(m.renderStatusBar()) +
-		fixedSectionGaps + headerTopPadding
+	fixed := 1 + lipgloss.Height(selectorStr) + 1 + lipgloss.Height(m.renderStatusBar())
 
 	return max(0, m.height-fixed)
 }

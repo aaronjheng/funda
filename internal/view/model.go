@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
@@ -41,6 +42,9 @@ const (
 	mainSectionsCap             = 8
 	toastVerticalDiv            = 3
 	toastCenterDiv              = 2
+	helpPaddingHorizontal       = 2
+	helpCenterDiv               = 2
+	helpVerticalDiv             = 3
 	searchContentPadding        = 4 // border(2) + padding(2)
 	searchOverlayBorder         = 2
 	searchOverlayHeightOffset   = 6 // border(2) + padding(2) + margin(2)
@@ -94,6 +98,8 @@ type Model struct {
 	logger           *slog.Logger
 	searchMode       bool
 	keymap           KeyMap
+	helpModel        help.Model
+	showHelp         bool
 	lastRefresh      time.Time
 	lastFullRefresh  time.Time
 	viewport         viewport.Model
@@ -194,6 +200,8 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, l
 		logger:           logger,
 		searchMode:       false,
 		keymap:           DefaultKeyMap(),
+		helpModel:        help.New(),
+		showHelp:         false,
 		lastRefresh:      time.Time{},
 		lastFullRefresh:  time.Time{},
 		viewport:         newViewportComponent(),
@@ -236,8 +244,29 @@ func (m Model) View() tea.View {
 
 	view := m.renderMain()
 
-	if m.toastMsg != "" {
-		toastContent := RenderToast(m.toastMsg)
+	if m.showHelp {
+		helpContent := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(accentColor)).
+			Padding(1, helpPaddingHorizontal).
+			Render(m.helpModel.View(m.keymap))
+
+		helpW := lipgloss.Width(helpContent)
+		helpH := lipgloss.Height(helpContent)
+
+		mainLayer := lipgloss.NewLayer(view)
+		helpLayer := lipgloss.NewLayer(helpContent).
+			X((m.width - helpW) / helpCenterDiv).
+			Y((m.height - helpH) / helpVerticalDiv)
+
+		comp := lipgloss.NewCompositor(mainLayer, helpLayer)
+		view = comp.Render()
+	} else if m.toastMsg != "" {
+		toastContent := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(accentColor)).
+			Padding(1, helpCenterDiv).
+			Render(truncateWidth(m.toastMsg, toastMaxWidth))
 
 		toastW := lipgloss.Width(toastContent)
 		toastH := lipgloss.Height(toastContent)
@@ -528,8 +557,6 @@ func (m Model) renderMain() string {
 	sections = append(sections,
 		"",
 		m.renderStatusBar(),
-		"",
-		RenderFooter(m.width),
 	)
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
@@ -613,7 +640,7 @@ func (m Model) availableHeight() int {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	fixed := lipgloss.Height(selectorStr) +
 		lipgloss.Height(m.renderStatusBar()) +
-		lipgloss.Height(RenderFooter(m.width)) + fixedSectionGaps + headerTopPadding
+		fixedSectionGaps + headerTopPadding
 
 	return max(0, m.height-fixed)
 }

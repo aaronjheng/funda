@@ -145,9 +145,8 @@ func (m Model) fundDisplayName(fund config.Fund) string {
 func (m Model) isMouseInFundArea(mouseY int) bool {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	headerHeight := lipgloss.Height(selectorStr) + 1 + headerTopPadding
-	footerHeight := lipgloss.Height(RenderFooter(m.width))
 
-	return mouseY >= headerHeight && mouseY < m.height-footerHeight-1
+	return mouseY >= headerHeight && mouseY < m.height-1
 }
 
 func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows int) int {
@@ -189,6 +188,14 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleReloadConfirmKey(msg)
 	}
 
+	if handled, model := m.handleHelpKey(msg); handled {
+		return model, nil
+	}
+
+	return m.handleActionKey(msg)
+}
+
+func (m Model) handleActionKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -207,22 +214,39 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "c":
 		return m.handleClearCache()
+	case "?":
+		m.helpModel.ShowAll = true
+		m.showHelp = true
+
+		return m, nil
 	case "o", "O":
 		m = m.handleSortModeKey(msg.String())
 		m = m.syncViewport()
 
 		return m, nil
 	case "left", "h", "right", "l":
-		var cmd tea.Cmd
-
-		m, cmd = m.handleGroupKey(msg.String())
-
-		return m, cmd
+		return m.handleGroupKey(msg.String())
 	case "up", "k", "down", "j", "pgup", "pgdown":
 		m = m.handleScrollKey(msg.String())
+
+		return m, nil
 	}
 
 	return m, nil
+}
+
+func (m Model) handleHelpKey(msg tea.KeyPressMsg) (bool, Model) {
+	if !m.showHelp {
+		return false, m
+	}
+
+	switch msg.String() {
+	case "?", "esc":
+		m.helpModel.ShowAll = false
+		m.showHelp = false
+	}
+
+	return true, m
 }
 
 func (m Model) handleScrollKey(key string) Model {

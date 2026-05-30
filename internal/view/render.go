@@ -272,31 +272,6 @@ func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (str
 	return rendered, bounds
 }
 
-func RenderFooter(width int) string {
-	footerText := "r refresh | R reload | s search | o sort | c clear cache | " +
-		"click copy | \u2191/\u2193 scroll | \u2190/\u2192 group | q quit"
-
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(secondaryColor)).
-		Align(lipgloss.Center).
-		Width(width).
-		Render(footerText)
-}
-
-func RenderToast(msg string) string {
-	if msg == "" {
-		return ""
-	}
-
-	msg = truncateWidth(msg, toastMaxWidth)
-
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(primaryColor)).
-		Background(lipgloss.Color(borderColor)).
-		Padding(1, 1).
-		Render(msg)
-}
-
 func truncateWidth(str string, maxWidth int) string {
 	if lipgloss.Width(str) <= maxWidth {
 		return str

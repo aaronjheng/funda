@@ -185,7 +185,7 @@ type GroupTabBounds struct {
 	EndX   int
 }
 
-func tabStyles() (lipgloss.Style, lipgloss.Style) {
+func tabStyles() (lipgloss.Style, lipgloss.Style, lipgloss.Style) {
 	activeBorder := lipgloss.Border{
 		Top:         "─",
 		Bottom:      " ",
@@ -221,7 +221,11 @@ func tabStyles() (lipgloss.Style, lipgloss.Style) {
 		Bold(true).
 		Padding(0, 1)
 
-	return activeSty, tabSty
+	gapSty := lipgloss.NewStyle().
+		Border(inactiveBorder, false, false, true, false).
+		BorderForeground(lipgloss.Color(borderColor))
+
+	return activeSty, tabSty, gapSty
 }
 
 func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (string, []GroupTabBounds) {
@@ -229,7 +233,7 @@ func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (str
 		return "", nil
 	}
 
-	activeSty, tabSty := tabStyles()
+	activeSty, tabSty, gapSty := tabStyles()
 
 	var renderedTabs []string
 
@@ -254,6 +258,12 @@ func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (str
 	}
 
 	row := lipgloss.JoinHorizontal(lipgloss.Bottom, renderedTabs...)
+
+	remaining := max(0, width-totalTabWidth)
+	if remaining > 0 {
+		gap := gapSty.Render(strings.Repeat(" ", remaining))
+		row = lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
+	}
 
 	var bounds []GroupTabBounds
 

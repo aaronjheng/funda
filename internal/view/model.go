@@ -599,8 +599,6 @@ func (m Model) syncViewport() Model {
 func (m Model) renderMain() string {
 	sections := make([]string, 0, mainSectionsCap)
 
-	sections = append(sections, "")
-
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	sections = append(sections, selectorStr)
 

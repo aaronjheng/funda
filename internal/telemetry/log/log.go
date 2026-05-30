@@ -13,7 +13,7 @@ const (
 	logFilePermissions = 0o600
 )
 
-func New() *slog.Logger {
+func New() (*slog.Logger, func() error) {
 	dir := filepath.Join(xdg.StateHome, "funda")
 	_ = os.MkdirAll(dir, logDirPermissions)
 
@@ -23,8 +23,12 @@ func New() *slog.Logger {
 		logFilePermissions,
 	)
 	if err != nil {
-		return slog.New(slog.DiscardHandler)
+		return slog.New(slog.DiscardHandler), func() error { return nil }
 	}
 
-	return slog.New(slog.NewTextHandler(file, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	cleanup := func() error {
+		return file.Close()
+	}
+
+	return slog.New(slog.NewTextHandler(file, &slog.HandlerOptions{Level: slog.LevelDebug})), cleanup
 }

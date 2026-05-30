@@ -1,6 +1,7 @@
 package view
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -82,6 +83,9 @@ func (i searchItem) Description() string { return i.Price + "  " + i.Change }
 func (i searchItem) FilterValue() string { return i.Code + i.Name }
 
 type Model struct {
+	//nolint:containedctx // context is passed through the Bubble Tea command chain
+	ctx              context.Context
+	cancel           context.CancelFunc
 	config           config.Config
 	groups           []config.Group
 	currentGroup     int
@@ -179,12 +183,16 @@ func newViewportComponent() viewport.Model {
 func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, logger *slog.Logger) Model {
 	logger.Info("funda starting", "groups", len(cfg.Groups))
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	textInput := textinput.New()
 	textInput.Prompt = "Search: "
 	textInput.Placeholder = "fund code or name..."
 	textInput.CharLimit = 20
 
 	model := Model{
+		ctx:              ctx,
+		cancel:           cancel,
 		config:           cfg,
 		groups:           cfg.Groups,
 		currentGroup:     0,

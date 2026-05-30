@@ -38,7 +38,9 @@ func rootCmd() *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			logger := log.New()
+			logger, logCleanup := log.New()
+			defer func() { _ = logCleanup() }()
+
 			fetcher := data.NewFetcher(logger)
 
 			return view.Run(cfg, fetcher, cfgFilepath, logger)

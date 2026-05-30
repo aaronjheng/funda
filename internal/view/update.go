@@ -1,7 +1,6 @@
 package view
 
 import (
-	"context"
 	"maps"
 	"time"
 
@@ -199,6 +198,8 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleActionKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
+		m.cancel()
+
 		return m, tea.Quit
 	case "r":
 		return m.handleRefreshKey()
@@ -487,7 +488,7 @@ func (m Model) fetchEstimatesCmd() tea.Cmd {
 			codes = append(codes, fund.Code)
 		}
 
-		ctx := context.Background()
+		ctx := m.ctx
 		estimates := m.fetcher.RefreshAllEstimates(ctx, codes)
 
 		return estimatesFetchedMsg{estimates: estimates}
@@ -609,7 +610,7 @@ func (m Model) fetchAllFundsCmd() tea.Cmd {
 			funds[idx] = struct{ Code, Alias string }{Code: fund.Code, Alias: fund.Alias}
 		}
 
-		ctx := context.Background()
+		ctx := m.ctx
 		result := m.fetcher.FetchAllCards(ctx, funds)
 
 		return allFundsFetchedMsg{funds: result, err: nil}
@@ -629,7 +630,7 @@ func (m Model) startTickCmd() tea.Cmd {
 
 func (m Model) searchFundCmd(query string, generation int) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx := m.ctx
 		results, err := m.fetcher.SearchFund(ctx, query)
 
 		return searchResultMsg{results: results, err: err, generation: generation}

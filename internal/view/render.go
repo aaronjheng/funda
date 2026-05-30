@@ -283,7 +283,7 @@ func RenderFooter(width int) string {
 		Render(footerText)
 }
 
-func RenderToast(msg string, _ int) string {
+func RenderToast(msg string) string {
 	if msg == "" {
 		return ""
 	}

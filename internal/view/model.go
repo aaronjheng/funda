@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/list"
@@ -41,7 +40,7 @@ const (
 	fundCardHeight              = fundCardContentLines + fundCardBorderLines // 6
 	mainSectionsCap             = 8
 	toastVerticalDiv            = 3
-	toastHorizontalDiv          = 2
+	toastCenterDiv              = 2
 	searchContentPadding        = 4 // border(2) + padding(2)
 	searchOverlayBorder         = 2
 	searchOverlayHeightOffset   = 6 // border(2) + padding(2) + margin(2)
@@ -238,7 +237,18 @@ func (m Model) View() tea.View {
 	view := m.renderMain()
 
 	if m.toastMsg != "" {
-		view = m.overlayToast(view)
+		toastContent := RenderToast(m.toastMsg)
+
+		toastW := lipgloss.Width(toastContent)
+		toastH := lipgloss.Height(toastContent)
+
+		mainLayer := lipgloss.NewLayer(view)
+		toastLayer := lipgloss.NewLayer(toastContent).
+			X((m.width - toastW) / toastCenterDiv).
+			Y((m.height - toastH) / toastVerticalDiv)
+
+		comp := lipgloss.NewCompositor(mainLayer, toastLayer)
+		view = comp.Render()
 	}
 
 	v := tea.NewView(view)
@@ -269,109 +279,6 @@ func (m Model) renderSearchView() tea.View {
 	v.AltScreen = true
 
 	return v
-}
-
-func (m Model) overlayToast(view string) string {
-	toastContent := RenderToast(m.toastMsg, m.width)
-	toastLines := strings.Split(toastContent, "\n")
-	toastH := len(toastLines)
-
-	viewLines := strings.Split(strings.TrimRight(view, "\n"), "\n")
-	totalLines := len(viewLines)
-
-	startLine := max(0, (totalLines-toastH)/toastVerticalDiv)
-
-	for i := 0; i < toastH && startLine+i < totalLines; i++ {
-		tLine := toastLines[i]
-		tWidth := lipgloss.Width(tLine)
-		startCol := max(0, (m.width-tWidth)/toastHorizontalDiv)
-
-		viewLines[startLine+i] = overlayLine(viewLines[startLine+i], tLine, startCol, tWidth)
-	}
-
-	return strings.Join(viewLines, "\n")
-}
-
-type ansiStyle struct {
-	active []string
-}
-
-func (s *ansiStyle) record(seq string, beforeCol bool) {
-	if seq == "\x1b[0m" {
-		s.active = nil
-	} else if beforeCol {
-		s.active = append(s.active, seq)
-	}
-}
-
-func (s *ansiStyle) restore() string {
-	var out strings.Builder
-
-	for _, st := range s.active {
-		out.WriteString(st)
-	}
-
-	return out.String()
-}
-
-func overlayLine(orig, overlay string, startCol, overlayWidth int) string {
-	var (
-		out, esc strings.Builder
-		style    ansiStyle
-	)
-
-	visCol := 0
-	inEsc := false
-	inserted := false
-
-	for _, char := range orig {
-		if char == '\x1b' {
-			inEsc = true
-
-			esc.Reset()
-			esc.WriteRune(char)
-			out.WriteRune(char)
-
-			continue
-		}
-
-		if inEsc {
-			esc.WriteRune(char)
-			out.WriteRune(char)
-
-			if char == 'm' {
-				style.record(esc.String(), visCol < startCol)
-
-				inEsc = false
-
-				esc.Reset()
-			}
-
-			continue
-		}
-
-		if visCol == startCol && !inserted {
-			out.WriteString("\x1b[0m")
-			out.WriteString(overlay)
-			out.WriteString("\x1b[0m")
-			out.WriteString(style.restore())
-
-			inserted = true
-		}
-
-		if visCol < startCol || visCol >= startCol+overlayWidth {
-			out.WriteRune(char)
-		}
-
-		visCol += lipgloss.Width(string(char))
-	}
-
-	if !inserted {
-		out.WriteString("\x1b[0m")
-		out.WriteString(overlay)
-	}
-
-	return out.String()
 }
 
 type persistedState struct {

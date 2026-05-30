@@ -145,8 +145,9 @@ func (m Model) fundDisplayName(fund config.Fund) string {
 func (m Model) isMouseInFundArea(mouseY int) bool {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	headerHeight := 1 + lipgloss.Height(selectorStr)
+	bottomReserve := lipgloss.Height(m.renderStatusBar())
 
-	return mouseY >= headerHeight && mouseY < m.height-1
+	return mouseY >= headerHeight && mouseY < m.height-bottomReserve
 }
 
 func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows int) int {

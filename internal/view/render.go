@@ -308,20 +308,32 @@ func truncateWidth(str string, maxWidth int) string {
 	return out.String()
 }
 
-func RenderStatusBar(msg string, width int, isError bool) string {
-	if msg == "" {
-		return ""
-	}
+func RenderStatusBar(left, right string, width int, isError bool) string {
+	leftSty := lipgloss.NewStyle().PaddingLeft(1)
 
-	style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center)
+	rightSty := lipgloss.NewStyle().
+		Align(lipgloss.Right).
+		PaddingRight(1)
 
 	if isError {
-		style = style.Foreground(lipgloss.Color(positiveColor))
+		leftSty = leftSty.Foreground(lipgloss.Color(positiveColor))
+		rightSty = rightSty.Foreground(lipgloss.Color(positiveColor))
 	} else {
-		style = style.Foreground(lipgloss.Color(secondaryColor))
+		leftSty = leftSty.Foreground(lipgloss.Color(secondaryColor))
+		rightSty = rightSty.Foreground(lipgloss.Color(secondaryColor))
 	}
 
-	return style.Render(msg)
+	sep := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(borderColor)).
+		Width(width).
+		Render(strings.Repeat("\u2500", width))
+
+	const paddingReserve = 2
+
+	gap := max(0, width-lipgloss.Width(left)-lipgloss.Width(right)-paddingReserve)
+	content := leftSty.Render(left) + strings.Repeat(" ", gap) + rightSty.Render(right)
+
+	return lipgloss.JoinVertical(lipgloss.Left, sep, content)
 }
 
 func RenderScrollbar(view viewport.Model) string {

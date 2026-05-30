@@ -173,6 +173,7 @@ func newViewportComponent() viewport.Model {
 	comp.KeyMap.PageDown.SetEnabled(false)
 	comp.KeyMap.HalfPageUp.SetEnabled(false)
 	comp.KeyMap.HalfPageDown.SetEnabled(false)
+	comp.FillHeight = true
 
 	return comp
 }
@@ -241,6 +242,15 @@ func (m Model) View() tea.View {
 	}
 
 	view := m.renderMain()
+
+	if statusStr := m.renderStatusBar(); statusStr != "" {
+		statusH := lipgloss.Height(statusStr)
+		mainLayer := lipgloss.NewLayer(view)
+		statusLayer := lipgloss.NewLayer(statusStr).
+			Y(m.height - statusH)
+		comp := lipgloss.NewCompositor(mainLayer, statusLayer)
+		view = comp.Render()
+	}
 
 	if m.showHelp {
 		helpContent := lipgloss.NewStyle().
@@ -552,11 +562,6 @@ func (m Model) renderMain() string {
 
 	sections = append(sections, viewportStr)
 
-	sections = append(sections,
-		"",
-		m.renderStatusBar(),
-	)
-
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
@@ -636,23 +641,27 @@ func (m Model) renderFundPair(
 
 func (m Model) availableHeight() int {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
-	fixed := 1 + lipgloss.Height(selectorStr) + 1 + lipgloss.Height(m.renderStatusBar())
 
-	return max(0, m.height-fixed)
+	top := 1 + lipgloss.Height(selectorStr)
+
+	return max(0, m.height-top)
 }
 
 func (m Model) renderStatusBar() string {
-	var msg string
+	group := m.groups[m.currentGroup]
+	left := fmt.Sprintf("%s (%d)", group.Name, len(group.Funds))
+
+	var right string
 
 	switch {
 	case m.clipboardMsg != "":
-		msg = m.clipboardMsg
+		right = m.clipboardMsg
 	case m.errMsg != "":
-		return RenderStatusBar(m.errMsg, m.width, true)
+		return RenderStatusBar(left, m.errMsg, m.width, true)
 	case m.loading:
-		msg = "Loading..."
+		right = "Loading..."
 	case !m.lastRefresh.IsZero():
-		msg = "上次更新: " + m.lastRefresh.Format("15:04:05")
+		right = "上次更新: " + m.lastRefresh.Format("15:04:05")
 	}
 
 	if m.sortField != SortDefault {
@@ -661,16 +670,16 @@ func (m Model) renderStatusBar() string {
 			dir = "↑"
 		}
 
-		if msg != "" {
-			msg += " | "
+		if right != "" {
+			right += " | "
 		}
 
-		msg += "排序: " + m.sortFieldLabel() + " " + dir
+		right += "排序: " + m.sortFieldLabel() + " " + dir
 	}
 
-	if msg == "" {
+	if right == "" {
 		return ""
 	}
 
-	return RenderStatusBar(msg, m.width, false)
+	return RenderStatusBar(left, right, m.width, false)
 }

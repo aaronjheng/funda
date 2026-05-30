@@ -664,10 +664,10 @@ func (m Model) renderStatusBar() string {
 		right = m.clipboardMsg
 	case m.errMsg != "":
 		return RenderStatusBar(left, m.errMsg, m.width, true)
-	case m.loading:
-		right = "Loading..."
 	case !m.lastRefresh.IsZero():
 		right = "上次更新: " + m.lastRefresh.Format("15:04:05")
+	case m.loading:
+		right = "Loading..."
 	}
 
 	if m.sortField != SortDefault {

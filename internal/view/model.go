@@ -602,7 +602,7 @@ func (m Model) renderMain() string {
 	sections = append(sections, "")
 
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
-	sections = append(sections, selectorStr, "")
+	sections = append(sections, selectorStr)
 
 	scrollbarReserve := 2
 	m.viewport.SetWidth(m.width - scrollbarReserve)

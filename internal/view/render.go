@@ -13,18 +13,17 @@ import (
 )
 
 const (
-	fundLabelWidth   = 12
-	fundValueOffset  = 14
-	primaryColor     = "#e2e8f0"
-	secondaryColor   = "#64748b"
-	borderColor      = "#334155"
-	positiveColor    = "#ff6b6b"
-	negativeColor    = "#51cf66"
-	accentColor      = "#60a5fa"
-	overlayPaddingX  = 2
-	overlayWidthSub  = 4
-	tabCenterDivisor = 2
-	toastMaxWidth    = 60
+	fundLabelWidth  = 12
+	fundValueOffset = 14
+	primaryColor    = "#e2e8f0"
+	secondaryColor  = "#64748b"
+	borderColor     = "#334155"
+	positiveColor   = "#ff6b6b"
+	negativeColor   = "#51cf66"
+	accentColor     = "#60a5fa"
+	overlayPaddingX = 2
+	overlayWidthSub = 4
+	toastMaxWidth   = 60
 )
 
 func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time, highlighted bool) string {
@@ -186,35 +185,43 @@ type GroupTabBounds struct {
 	EndX   int
 }
 
-type tabInfo struct {
-	raw   string
-	width int
-}
-
-func renderGroupTabs(groups []config.Group, selectedIdx int) ([]tabInfo, int) {
-	tabs := make([]tabInfo, len(groups))
-	totalWidth := 0
-
-	for idx, group := range groups {
-		label := fmt.Sprintf("%s (%d)", group.Name, len(group.Funds))
-
-		var rendered string
-		if idx == selectedIdx {
-			rendered = lipgloss.NewStyle().
-				Foreground(lipgloss.Color(primaryColor)).
-				Render(label)
-		} else {
-			rendered = lipgloss.NewStyle().
-				Foreground(lipgloss.Color(secondaryColor)).
-				Render(label)
-		}
-
-		w := lipgloss.Width(rendered)
-		tabs[idx] = tabInfo{raw: rendered, width: w}
-		totalWidth += w
+func tabStyles() (lipgloss.Style, lipgloss.Style) {
+	activeBorder := lipgloss.Border{
+		Top:         "─",
+		Bottom:      " ",
+		Left:        "│",
+		Right:       "│",
+		TopLeft:     "╭",
+		TopRight:    "╮",
+		BottomLeft:  "┘",
+		BottomRight: "└",
 	}
 
-	return tabs, totalWidth
+	inactiveBorder := lipgloss.Border{
+		Top:         "─",
+		Bottom:      "─",
+		Left:        "│",
+		Right:       "│",
+		TopLeft:     "╭",
+		TopRight:    "╮",
+		BottomLeft:  "┴",
+		BottomRight: "┴",
+	}
+
+	tabSty := lipgloss.NewStyle().
+		Border(inactiveBorder, true).
+		BorderForeground(lipgloss.Color(borderColor)).
+		Foreground(lipgloss.Color(secondaryColor)).
+		Padding(0, 1)
+
+	activeSty := lipgloss.NewStyle().
+		Border(activeBorder, true).
+		BorderForeground(lipgloss.Color(accentColor)).
+		Foreground(lipgloss.Color(primaryColor)).
+		Bold(true).
+		Padding(0, 1)
+
+	return activeSty, tabSty
 }
 
 func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (string, []GroupTabBounds) {
@@ -222,40 +229,45 @@ func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (str
 		return "", nil
 	}
 
-	tabs, totalWidth := renderGroupTabs(groups, selectedIdx)
-	gap := 2
-	totalWidth += gap * (len(groups) - 1)
+	activeSty, tabSty := tabStyles()
 
-	startX := 0
-	if width > totalWidth {
-		startX = (width - totalWidth) / tabCenterDivisor
+	var renderedTabs []string
+
+	var tabWidths []int
+
+	totalTabWidth := 0
+
+	for idx, group := range groups {
+		label := fmt.Sprintf("%s (%d)", group.Name, len(group.Funds))
+
+		var tab string
+		if idx == selectedIdx {
+			tab = activeSty.Render(label)
+		} else {
+			tab = tabSty.Render(label)
+		}
+
+		tabW := lipgloss.Width(tab)
+		renderedTabs = append(renderedTabs, tab)
+		tabWidths = append(tabWidths, tabW)
+		totalTabWidth += tabW
 	}
 
-	bounds := make([]GroupTabBounds, 0, len(tabs))
+	row := lipgloss.JoinHorizontal(lipgloss.Bottom, renderedTabs...)
 
-	var builder strings.Builder
+	var bounds []GroupTabBounds
 
-	builder.WriteString(strings.Repeat(" ", startX))
-
-	currentX := startX
-
-	for idx, tab := range tabs {
+	currentX := 0
+	for idx, tabW := range tabWidths {
 		bounds = append(bounds, GroupTabBounds{
 			Index:  idx,
 			StartX: currentX,
-			EndX:   currentX + tab.width,
+			EndX:   currentX + tabW,
 		})
-		builder.WriteString(tab.raw)
-		currentX += tab.width
-
-		if idx < len(tabs)-1 {
-			builder.WriteString(strings.Repeat(" ", gap))
-			currentX += gap
-		}
+		currentX += tabW
 	}
 
-	content := builder.String()
-	rendered := lipgloss.NewStyle().Width(width).Render(content)
+	rendered := lipgloss.NewStyle().Width(width).Render(row)
 
 	return rendered, bounds
 }

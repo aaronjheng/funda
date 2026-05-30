@@ -21,8 +21,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.scrollOffset = 0
 		m = m.applySearchDimensions()
+		m = m.syncViewport()
 
 		return m, nil
 
@@ -30,7 +30,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouseClick(msg)
 
 	case tea.MouseWheelMsg:
-		return m.handleMouseWheel(msg), nil
+		var cmd tea.Cmd
+
+		m.viewport, cmd = m.viewport.Update(msg)
+
+		return m, cmd
 
 	case tickMsg:
 		return m.handleTick()
@@ -61,52 +65,6 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m.handleNormalKey(msg)
-}
-
-const (
-	scrollKeyStep     = fundCardHeight // keyboard jumps by full card row
-	scrollWheelStep   = 1              // mouse/touchpad scrolls line-by-line for smoothness
-	scrollPageDivisor = 2
-)
-
-func (m Model) clampedMaxScrollOffset() int {
-	group := m.groups[m.currentGroup]
-	numRows := (len(group.Funds) + cardsPerRow - 1) / cardsPerRow
-	totalHeight := numRows * fundCardHeight
-	available := m.availableHeight()
-
-	return m.calcMaxScrollOffset(totalHeight, available)
-}
-
-func (m Model) handleScrollKey(key string) Model {
-	pageSize := max(1, m.availableHeight()/scrollPageDivisor)
-	maxOffset := m.clampedMaxScrollOffset()
-
-	switch key {
-	case "up", "k":
-		m.scrollOffset = max(0, m.scrollOffset-scrollKeyStep)
-	case "down", "j":
-		m.scrollOffset = min(maxOffset, m.scrollOffset+scrollKeyStep)
-	case "pgup":
-		m.scrollOffset = max(0, m.scrollOffset-pageSize)
-	case "pgdown":
-		m.scrollOffset = min(maxOffset, m.scrollOffset+pageSize)
-	}
-
-	return m
-}
-
-func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) Model {
-	maxOffset := m.clampedMaxScrollOffset()
-
-	switch msg.Button {
-	case tea.MouseWheelUp:
-		m.scrollOffset = max(0, m.scrollOffset-scrollWheelStep)
-	case tea.MouseWheelDown:
-		m.scrollOffset = min(maxOffset, m.scrollOffset+scrollWheelStep)
-	}
-
-	return m
 }
 
 func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
@@ -155,7 +113,7 @@ func (m Model) handleSelectorClick(msg tea.MouseClickMsg) (bool, Model, tea.Cmd)
 		if msg.X >= b.StartX && msg.X < b.EndX {
 			if b.Index != m.currentGroup {
 				m.currentGroup = b.Index
-				m.scrollOffset = 0
+				m.viewport.GotoTop()
 				m.loading = true
 				m.errMsg = ""
 				m.lastFullRefresh = time.Now()
@@ -193,14 +151,12 @@ func (m Model) isMouseInFundArea(mouseY int) bool {
 }
 
 func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows int) int {
-	totalHeight := numRows * fundCardHeight
-	available := m.availableHeight()
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	headerHeight := lipgloss.Height(selectorStr) + 1 + headerTopPadding
-	relativeY := msg.Y - headerHeight
+	relativeY := msg.Y - headerHeight + m.viewport.YOffset()
 
-	targetRowIdx := m.resolveRowIndex(numRows, totalHeight, available, relativeY)
-	if targetRowIdx < 0 {
+	targetRowIdx := relativeY / fundCardHeight
+	if targetRowIdx < 0 || targetRowIdx >= numRows {
 		return -1
 	}
 
@@ -213,35 +169,6 @@ func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows int) int {
 	}
 
 	return fundIdx
-}
-
-func (m Model) resolveRowIndex(numRows, totalHeight, available, relativeY int) int {
-	if totalHeight <= available {
-		return m.resolveRowIndexNoScroll(numRows, relativeY)
-	}
-
-	return m.resolveRowIndexWithScroll(numRows, available, relativeY)
-}
-
-func (m Model) resolveRowIndexNoScroll(numRows, relativeY int) int {
-	rowIdx := relativeY / fundCardHeight
-	if rowIdx >= 0 && rowIdx < numRows {
-		return rowIdx
-	}
-
-	return -1
-}
-
-func (m Model) resolveRowIndexWithScroll(numRows, available, relativeY int) int {
-	totalLines := numRows * fundCardHeight
-	offset := m.clampedScrollOffset(totalLines, available)
-
-	visibleLineIdx := relativeY + offset
-	if visibleLineIdx >= totalLines || visibleLineIdx < 0 {
-		return -1
-	}
-
-	return visibleLineIdx / fundCardHeight
 }
 
 func (m Model) resolveColumn(mouseX int) int {
@@ -282,6 +209,7 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleClearCache()
 	case "o", "O":
 		m = m.handleSortModeKey(msg.String())
+		m = m.syncViewport()
 
 		return m, nil
 	case "left", "h", "right", "l":
@@ -295,6 +223,21 @@ func (m Model) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) handleScrollKey(key string) Model {
+	switch key {
+	case "up", "k":
+		m.viewport.ScrollUp(fundCardHeight)
+	case "down", "j":
+		m.viewport.ScrollDown(fundCardHeight)
+	case "pgup":
+		m.viewport.PageUp()
+	case "pgdown":
+		m.viewport.PageDown()
+	}
+
+	return m
 }
 
 func (m Model) handleReloadConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -329,7 +272,7 @@ func (m Model) handleClearCache() (tea.Model, tea.Cmd) {
 func (m Model) handlePrevGroup() (Model, tea.Cmd) {
 	if m.currentGroup > 0 {
 		m.currentGroup--
-		m.scrollOffset = 0
+		m.viewport.GotoTop()
 		m = m.loadGroupCache()
 		m.loading = true
 		m.errMsg = ""
@@ -345,7 +288,7 @@ func (m Model) handlePrevGroup() (Model, tea.Cmd) {
 func (m Model) handleNextGroup() (Model, tea.Cmd) {
 	if m.currentGroup < len(m.groups)-1 {
 		m.currentGroup++
-		m.scrollOffset = 0
+		m.viewport.GotoTop()
 		m = m.loadGroupCache()
 		m.loading = true
 		m.errMsg = ""
@@ -540,6 +483,7 @@ func (m Model) handleEstimatesFetched(msg estimatesFetchedMsg) (tea.Model, tea.C
 
 	m.lastRefresh = time.Now()
 	m.cardCache = make(map[string]string)
+	m = m.syncViewport()
 
 	m.logger.Debug("estimates applied", "updated", updated)
 
@@ -559,6 +503,7 @@ func (m Model) handleFundsFetched(msg allFundsFetchedMsg) (tea.Model, tea.Cmd) {
 		m.lastRefresh = time.Now()
 		m.cardCache = make(map[string]string)
 		m = m.sortFunds()
+		m = m.syncViewport()
 
 		m.logger.Info("funds fetched and applied", "count", len(msg.funds))
 	}

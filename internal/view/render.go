@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
 
 	"github.com/aaronjheng/funda/internal/config"
@@ -260,11 +261,14 @@ func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (str
 }
 
 func RenderFooter(width int) string {
+	footerText := "r refresh | R reload | s search | o sort | c clear cache | " +
+		"click copy | \u2191/\u2193 scroll | \u2190/\u2192 group | q quit"
+
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(secondaryColor)).
 		Align(lipgloss.Center).
 		Width(width).
-		Render("r refresh | R reload | s search | o sort | c clear cache | click copy | ↑/↓ scroll | ←/→ group | q quit")
+		Render(footerText)
 }
 
 func RenderToast(msg string, _ int) string {
@@ -295,7 +299,7 @@ func truncateWidth(str string, maxWidth int) string {
 	for _, char := range str {
 		charWidth := lipgloss.Width(string(char))
 		if width+charWidth > maxWidth-1 {
-			out.WriteString("…")
+			out.WriteString("\u2026")
 
 			break
 		}
@@ -324,16 +328,22 @@ func RenderStatusBar(msg string, width int, isError bool) string {
 	return style.Render(msg)
 }
 
-func RenderScrollbar(offset, totalLines, trackHeight int) string {
-	if totalLines <= trackHeight || trackHeight <= 0 {
+func RenderScrollbar(view viewport.Model) string {
+	total := view.TotalLineCount()
+	visible := view.VisibleLineCount()
+
+	if total <= visible || visible <= 0 {
 		return ""
 	}
 
-	thumbSize := min(max(1, trackHeight*trackHeight/totalLines), trackHeight)
+	yOffset := view.YOffset()
+	thumbSize := max(1, visible*visible/total)
+
+	maxThumbPos := visible - thumbSize
 
 	thumbPos := 0
-	if totalLines > trackHeight {
-		thumbPos = offset * (trackHeight - thumbSize) / (totalLines - trackHeight)
+	if total > visible {
+		thumbPos = yOffset * maxThumbPos / (total - visible)
 	}
 
 	var builder strings.Builder
@@ -341,14 +351,14 @@ func RenderScrollbar(offset, totalLines, trackHeight int) string {
 	thumbStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
 	trackStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(borderColor))
 
-	for idx := range trackHeight {
-		if idx >= thumbPos && idx < thumbPos+thumbSize {
-			builder.WriteString(thumbStyle.Render("┃"))
+	for line := range visible {
+		if line >= thumbPos && line < thumbPos+thumbSize {
+			builder.WriteString(thumbStyle.Render("\u2503"))
 		} else {
-			builder.WriteString(trackStyle.Render("│"))
+			builder.WriteString(trackStyle.Render("\u2502"))
 		}
 
-		if idx < trackHeight-1 {
+		if line < visible-1 {
 			builder.WriteByte('\n')
 		}
 	}

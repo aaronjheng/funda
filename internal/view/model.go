@@ -12,6 +12,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/adrg/xdg"
@@ -33,7 +34,6 @@ const (
 	headerTopPadding            = 1
 	sortStateDirPermissions     = 0o700
 	sortStateFilePermissions    = 0o600
-	scrollbarWidth              = 2
 	cardFrameWidth              = 4 // border(2) + horizontal padding(2)
 	clipboardDisplayDuration    = 1 * time.Second
 	fundCardContentLines        = 5 // title, nav, change, estimate, time
@@ -97,7 +97,7 @@ type Model struct {
 	keymap           KeyMap
 	lastRefresh      time.Time
 	lastFullRefresh  time.Time
-	scrollOffset     int
+	viewport         viewport.Model
 	clipboardMsg     string
 	copiedCode       string
 	toastMsg         string
@@ -142,14 +142,7 @@ func clearClipboardMsgCmd() tea.Cmd {
 	})
 }
 
-func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, logger *slog.Logger) Model {
-	logger.Info("funda starting", "groups", len(cfg.Groups))
-
-	textInput := textinput.New()
-	textInput.Prompt = "Search: "
-	textInput.Placeholder = "fund code or name..."
-	textInput.CharLimit = 20
-
+func newSearchList() list.Model {
 	delegate := list.NewDefaultDelegate()
 	searchList := list.New([]list.Item{}, delegate, 0, 0)
 	searchList.SetShowHelp(false)
@@ -166,6 +159,29 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, l
 	searchList.KeyMap.CloseFullHelp.SetEnabled(false)
 	searchList.DisableQuitKeybindings()
 
+	return searchList
+}
+
+func newViewportComponent() viewport.Model {
+	comp := viewport.New()
+	comp.KeyMap.Up.SetEnabled(false)
+	comp.KeyMap.Down.SetEnabled(false)
+	comp.KeyMap.PageUp.SetEnabled(false)
+	comp.KeyMap.PageDown.SetEnabled(false)
+	comp.KeyMap.HalfPageUp.SetEnabled(false)
+	comp.KeyMap.HalfPageDown.SetEnabled(false)
+
+	return comp
+}
+
+func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, logger *slog.Logger) Model {
+	logger.Info("funda starting", "groups", len(cfg.Groups))
+
+	textInput := textinput.New()
+	textInput.Prompt = "Search: "
+	textInput.Placeholder = "fund code or name..."
+	textInput.CharLimit = 20
+
 	model := Model{
 		config:           cfg,
 		groups:           cfg.Groups,
@@ -181,7 +197,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, l
 		keymap:           DefaultKeyMap(),
 		lastRefresh:      time.Time{},
 		lastFullRefresh:  time.Time{},
-		scrollOffset:     0,
+		viewport:         newViewportComponent(),
 		clipboardMsg:     "",
 		copiedCode:       "",
 		toastMsg:         "",
@@ -193,7 +209,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, l
 		hasUnsavedFunds:  false,
 		reloadConfirm:    false,
 		textInput:        textInput,
-		searchList:       searchList,
+		searchList:       newSearchList(),
 		lastSearchQuery:  "",
 		searchGeneration: 0,
 	}
@@ -472,7 +488,7 @@ func (m Model) toggleSortDirection() Model {
 
 func (m Model) handleSortKey() Model {
 	m = m.cycleSortMode()
-	m.scrollOffset = 0
+	m.viewport.GotoTop()
 	m.cardCache = make(map[string]string)
 	m.saveState()
 
@@ -481,7 +497,7 @@ func (m Model) handleSortKey() Model {
 
 func (m Model) handleSortDirectionKey() Model {
 	m = m.toggleSortDirection()
-	m.scrollOffset = 0
+	m.viewport.GotoTop()
 	m.cardCache = make(map[string]string)
 	m.saveState()
 
@@ -554,7 +570,7 @@ func (m Model) handleReloadConfig() (tea.Model, tea.Cmd) {
 	m.currentGroup = 0
 	m.fundData = make(map[string]data.FundData)
 	m.errMsg = ""
-	m.scrollOffset = 0
+	m.viewport.GotoTop()
 	m.cardCache = make(map[string]string)
 	m.sortField = SortDefault
 	m.sortAsc = false
@@ -567,6 +583,19 @@ func (m Model) handleReloadConfig() (tea.Model, tea.Cmd) {
 	return m, m.fetchAllFundsCmd()
 }
 
+func (m Model) syncViewport() Model {
+	scrollbarReserve := 2
+	m.viewport.SetWidth(m.width - scrollbarReserve)
+	m.viewport.SetHeight(m.availableHeight())
+
+	lastTradingDay := data.GetLastTradingDate(time.Now())
+	cardWidth := m.computeCardWidth()
+	fundsContent := m.renderFundsContent(cardWidth, lastTradingDay)
+	m.viewport.SetContent(fundsContent)
+
+	return m
+}
+
 func (m Model) renderMain() string {
 	sections := make([]string, 0, mainSectionsCap)
 
@@ -575,7 +604,21 @@ func (m Model) renderMain() string {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	sections = append(sections, selectorStr, "")
 
-	sections = append(sections, m.renderFundsSection())
+	scrollbarReserve := 2
+	m.viewport.SetWidth(m.width - scrollbarReserve)
+	m.viewport.SetHeight(m.availableHeight())
+
+	lastTradingDay := data.GetLastTradingDate(time.Now())
+	cardWidth := m.computeCardWidth()
+	fundsContent := m.renderFundsContent(cardWidth, lastTradingDay)
+	m.viewport.SetContent(fundsContent)
+
+	viewportStr := m.viewport.View()
+	if s := RenderScrollbar(m.viewport); s != "" {
+		viewportStr = lipgloss.JoinHorizontal(lipgloss.Top, viewportStr, " ", s)
+	}
+
+	sections = append(sections, viewportStr)
 
 	sections = append(sections,
 		"",
@@ -587,43 +630,23 @@ func (m Model) renderMain() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-func (m Model) renderFundsSection() string {
-	lastTradingDay := data.GetLastTradingDate(time.Now())
-	numFunds := len(m.sortedFunds)
-
-	numRows := (numFunds + cardsPerRow - 1) / cardsPerRow
-	totalHeight := numRows * fundCardHeight
-	available := m.availableHeight()
-
-	cardWidth := m.computeCardWidth(totalHeight, available)
-
-	if numFunds == 0 {
+func (m Model) renderFundsContent(cardWidth int, lastTradingDay time.Time) string {
+	if len(m.sortedFunds) == 0 {
 		return lipgloss.NewStyle().
 			Width(m.width).
-			Height(m.availableHeight()).
 			Align(lipgloss.Center).
 			Render("No funds in this group")
 	}
 
-	visibleStart, visibleEnd, offset := m.calcVisibleFundRange(numFunds, totalHeight, available)
-	visibleFunds := m.sortedFunds[visibleStart:visibleEnd]
-	rows := m.renderFundRows(visibleFunds, cardWidth, lastTradingDay)
+	rows := m.renderFundRows(m.sortedFunds, cardWidth, lastTradingDay)
 
-	return m.renderScrollableRows(rows, totalHeight, available, offset)
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
-func (m Model) computeCardWidth(totalHeight, available int) int {
+func (m Model) computeCardWidth() int {
 	cardWidth := (m.width - cardPaddingWidth) / cardsPerRow
 	if cardWidth < minCardWidth {
 		cardWidth = m.width - cardPaddingWidth
-	}
-
-	// If content overflows, account for scrollbar width to avoid double rendering
-	if totalHeight > available {
-		cardWidth = (m.width - scrollbarWidth - (cardsPerRow - 1)) / cardsPerRow
-		if cardWidth < minCardWidth {
-			cardWidth = m.width - scrollbarWidth
-		}
 	}
 
 	return cardWidth
@@ -681,33 +704,6 @@ func (m Model) renderFundPair(
 	return pair
 }
 
-func (m Model) calcMaxScrollOffset(totalLines, availableHeight int) int {
-	return max(0, totalLines-availableHeight)
-}
-
-func (m Model) clampedScrollOffset(totalHeight, available int) int {
-	if totalHeight <= available {
-		return 0
-	}
-
-	maxOffset := m.calcMaxScrollOffset(totalHeight, available)
-
-	return max(0, min(m.scrollOffset, maxOffset))
-}
-
-func (m Model) calcVisibleFundRange(totalFunds, totalHeight, available int) (int, int, int) {
-	offset := m.clampedScrollOffset(totalHeight, available)
-	end := min(offset+available, totalHeight)
-
-	startRow := offset / fundCardHeight
-	endRow := min((end+fundCardHeight-1)/fundCardHeight, (totalFunds+cardsPerRow-1)/cardsPerRow)
-
-	startFund := startRow * cardsPerRow
-	endFund := min(endRow*cardsPerRow, totalFunds)
-
-	return startFund, endFund, offset
-}
-
 func (m Model) availableHeight() int {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
 	fixed := lipgloss.Height(selectorStr) +
@@ -715,38 +711,6 @@ func (m Model) availableHeight() int {
 		lipgloss.Height(RenderFooter(m.width)) + fixedSectionGaps + headerTopPadding
 
 	return max(0, m.height-fixed)
-}
-
-func (m Model) renderScrollableRows(rows []string, totalHeight, available, offset int) string {
-	if totalHeight <= available {
-		return lipgloss.JoinVertical(lipgloss.Left, rows...)
-	}
-
-	end := min(offset+available, totalHeight)
-	firstRowOffset := (offset / fundCardHeight) * fundCardHeight
-
-	startRow := (offset - firstRowOffset) / fundCardHeight
-	firstRowIdx := firstRowOffset / fundCardHeight
-	endRow := min((end+fundCardHeight-1)/fundCardHeight-firstRowIdx, len(rows))
-
-	visibleRows := rows[startRow:endRow]
-	allContent := lipgloss.JoinVertical(lipgloss.Left, visibleRows...)
-	allLines := strings.Split(allContent, "\n")
-
-	skipTop := (offset - firstRowOffset) % fundCardHeight
-	if skipTop > 0 && len(allLines) > skipTop {
-		allLines = allLines[skipTop:]
-	}
-
-	keepLines := end - offset
-	if len(allLines) > keepLines {
-		allLines = allLines[:keepLines]
-	}
-
-	visibleContent := strings.Join(allLines, "\n")
-	scrollbar := RenderScrollbar(offset, totalHeight, available)
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, visibleContent, " ", scrollbar)
 }
 
 func (m Model) renderStatusBar() string {

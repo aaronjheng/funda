@@ -28,8 +28,6 @@ const (
 	cardPaddingWidth            = 2
 	cardsPerRow                 = 2
 	minCardWidth                = 20
-	labelWidth                  = 12
-	valueWidthOffset            = 14
 	sortStateDirPermissions     = 0o700
 	sortStateFilePermissions    = 0o600
 	cardFrameWidth              = 4 // border(2) + horizontal padding(2)

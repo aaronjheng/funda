@@ -13,17 +13,14 @@ import (
 )
 
 const (
-	fundLabelWidth  = 12
-	fundValueOffset = 14
-	primaryColor    = "#e2e8f0"
-	secondaryColor  = "#64748b"
-	borderColor     = "#334155"
-	positiveColor   = "#ff6b6b"
-	negativeColor   = "#51cf66"
-	accentColor     = "#60a5fa"
-	overlayPaddingX = 2
-	overlayWidthSub = 4
-	toastMaxWidth   = 60
+	fundLabelWidth = 12
+	primaryColor   = "#e2e8f0"
+	secondaryColor = "#64748b"
+	borderColor    = "#334155"
+	positiveColor  = "#ff6b6b"
+	negativeColor  = "#51cf66"
+	accentColor    = "#60a5fa"
+	toastMaxWidth  = 60
 )
 
 func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time, highlighted bool) string {

@@ -216,7 +216,7 @@ func tabStyles() (lipgloss.Style, lipgloss.Style) {
 
 	activeSty := lipgloss.NewStyle().
 		Border(activeBorder, true).
-		BorderForeground(lipgloss.Color(accentColor)).
+		BorderForeground(lipgloss.Color(primaryColor)).
 		Foreground(lipgloss.Color(primaryColor)).
 		Bold(true).
 		Padding(0, 1)

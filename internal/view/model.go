@@ -295,7 +295,7 @@ func (m Model) renderSearchView() tea.View {
 	)
 
 	styled := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(accentColor)).
 		Padding(1, 1).
 		Width(m.width - searchOverlayBorder).

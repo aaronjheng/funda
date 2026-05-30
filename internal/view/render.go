@@ -67,7 +67,7 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time,
 	}
 
 	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderCol).
 		Padding(0, 1).
 		Width(width).

@@ -292,8 +292,7 @@ func RenderToast(msg string) string {
 
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(primaryColor)).
-		Bold(true).
-		Background(lipgloss.Color("#1e293b")).
+		Background(lipgloss.Color(borderColor)).
 		Padding(1, 1).
 		Render(msg)
 }

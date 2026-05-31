@@ -2,100 +2,52 @@ package data
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/aaronjheng/funda/internal/eastmoney"
+	"github.com/aaronjheng/funda/internal/sina"
 )
 
-var errHTTPStatus = errors.New("http error status")
-
-const (
-	httpClientTimeout = 30 * time.Second
-	maxConcurrent     = 3
-	minFundInfoPoints = 2
-)
-
-const (
-	eastMoneyBulkURL = "https://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx" +
-		"?t=1&lx=1&letter=&gsid=&text=&sort=zdf,desc" +
-		"&page=1,50000&dt=1580914040623&atfc=&onlySale=0"
-
-	sinaETFURL = "https://vip.stock.finance.sina.com.cn/quotes_service/api/jsonp.php" +
-		"/IO.XSRV2.CallbackList['da_yPT46_Ll7K6WD']" +
-		"/Market_Center.getHQNodeDataSimple" +
-		"?page=1&num=80&sort=changepercent&asc=0&node=etf_hq_fund&_s_r_a=init"
-
-	fundGZURL = "https://fundgz.1234567.com.cn/js/%s.js"
-)
-
-// NetWorthPoint represents a single data point from fund net worth trend.
-type NetWorthPoint struct {
-	X int64   `json:"x"`
-	Y float64 `json:"y"`
-}
-
-// FundInfo represents data extracted from EastMoney per-fund detail.
-type FundInfo struct {
-	Name          string
-	NetWorthTrend []NetWorthPoint
-}
+const maxConcurrent = 3
 
 // Fetcher handles HTTP requests and caching for fund data.
 type Fetcher struct {
-	client         *http.Client
-	sem            chan struct{}
-	memCache       *MemoryCache
-	etfCache       *ETFTickerCache
-	logger         *slog.Logger
-	defaultHeaders map[string]string
-	sinaHeaders    map[string]string
+	eastMoney eastmoney.Client
+	sina      sina.Client
+	sem       chan struct{}
+	memCache  *MemoryCache
+	etfCache  *ETFTickerCache
+	logger    *slog.Logger
 }
 
-// NewFetcher creates a new Fetcher with default settings.
-func NewFetcher(logger *slog.Logger) *Fetcher {
+// NewFetcher creates a new Fetcher with injected API clients.
+func NewFetcher(eastMoney eastmoney.Client, sinaClient sina.Client, logger *slog.Logger) *Fetcher {
 	return &Fetcher{
-		client:   &http.Client{Timeout: httpClientTimeout},
-		sem:      make(chan struct{}, maxConcurrent),
-		memCache: NewMemoryCache(logger),
+		eastMoney: eastMoney,
+		sina:      sinaClient,
+		sem:       make(chan struct{}, maxConcurrent),
+		memCache:  NewMemoryCache(logger),
 		etfCache: &ETFTickerCache{
 			mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}, logger: logger,
 		},
 		logger: logger,
-		defaultHeaders: map[string]string{
-			"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-			"Referer":    "https://fund.eastmoney.com/",
-		},
-		sinaHeaders: map[string]string{
-			"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-			"Referer":    "https://vip.stock.finance.sina.com.cn/",
-		},
 	}
 }
 
 // FetchETFData fetches ETF data from Sina Finance.
-func (f *Fetcher) FetchETFData(ctx context.Context) ([]ETFRow, error) {
+func (f *Fetcher) FetchETFData(ctx context.Context) ([]sina.ETFRow, error) {
 	if data, ok := f.etfCache.Get(); ok {
 		return data, nil
 	}
 
-	f.logger.Info("fetching sina etf data")
-
-	body, err := f.get(ctx, sinaETFURL, f.sinaHeaders)
+	rows, err := f.sina.FetchETFData(ctx)
 	if err != nil {
-		f.logger.Error("fetch sina etf failed", "error", err)
-
-		return nil, fmt.Errorf("fetch sina etf: %w", err)
-	}
-
-	rows, err := ParseSinaETF(string(body))
-	if err != nil {
-		f.logger.Error("parse sina etf failed", "error", err)
-
-		return nil, fmt.Errorf("parse sina etf: %w", err)
+		return nil, fmt.Errorf("fetch etf data: %w", err)
 	}
 
 	f.etfCache.Set(rows)
@@ -260,36 +212,24 @@ func (f *Fetcher) FetchAllCards(
 	return result
 }
 
-func (f *Fetcher) get(ctx context.Context, url string, headers map[string]string) ([]byte, error) {
-	f.logger.Debug("http request", "url", url)
+func (f *Fetcher) refreshEstimate(ctx context.Context, code string, etfRows []sina.ETFRow) (float64, string) {
+	for _, row := range etfRows {
+		if strings.HasSuffix(row.Symbol, code) {
+			trade, _ := strconv.ParseFloat(row.Trade, 64)
+			if trade > 0 {
+				return trade, time.Now().In(eastmoney.ShanghaiLocation).Format("15:04:05")
+			}
+		}
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	fundGZ, err := f.eastMoney.FetchFundEstimate(ctx, code)
 	if err != nil {
-		return nil, fmt.Errorf("create request for %s: %w", url, err)
+		f.logger.Debug("estimate refresh failed", "code", code, "error", err)
+
+		return 0, ""
 	}
 
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
+	gsz, _ := strconv.ParseFloat(fundGZ.GSZ, 64)
 
-	resp, err := f.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("execute request for %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		f.logger.Warn("http response not ok", "url", url, "status", resp.StatusCode)
-
-		return nil, fmt.Errorf("%w: %d", errHTTPStatus, resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response body: %w", err)
-	}
-
-	f.logger.Debug("http response", "url", url, "bytes", len(body))
-
-	return body, nil
+	return gsz, fundGZ.GZTime
 }

@@ -2,65 +2,15 @@ package data
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aaronjheng/funda/internal/eastmoney"
 )
 
-// FetchAllFunds fetches the bulk EastMoney fund data.
-func (f *Fetcher) FetchAllFunds(ctx context.Context) ([]FundRow, string, string, error) {
-	f.logger.Info("fetching eastmoney bulk data")
-
-	body, err := f.get(ctx, eastMoneyBulkURL, f.defaultHeaders)
-	if err != nil {
-		f.logger.Error("fetch eastmoney bulk failed", "error", err)
-
-		return nil, "", "", fmt.Errorf("fetch eastmoney bulk: %w", err)
-	}
-
-	rows, navDate, prevDate, err := ParseEastMoneyBulk(string(body))
-	if err != nil {
-		f.logger.Error("parse eastmoney bulk failed", "error", err)
-
-		return nil, "", "", err
-	}
-
-	f.logger.Info("eastmoney bulk fetched", "funds", len(rows), "nav_date", navDate)
-
-	return rows, navDate, prevDate, nil
-}
-
-// FetchFundInfo fetches per-fund detail for NAV fallback.
-func (f *Fetcher) FetchFundInfo(ctx context.Context, code string) (FundInfo, error) {
-	f.logger.Debug("fetching per-fund info", "code", code)
-
-	url := fmt.Sprintf("https://fund.eastmoney.com/pingzhongdata/%s.js", code)
-
-	body, err := f.get(ctx, url, f.defaultHeaders)
-	if err != nil {
-		f.logger.Warn("fetch per-fund info failed", "code", code, "error", err)
-
-		return FundInfo{}, fmt.Errorf("fetch fund info for %s: %w", code, err)
-	}
-
-	return ParseFundInfo(string(body))
-}
-
-// fetchFundEstimate fetches the latest fund estimate from EastMoney fundgz API.
-func (f *Fetcher) fetchFundEstimate(ctx context.Context, code string) (FundGZ, error) {
-	url := fmt.Sprintf(fundGZURL, code)
-
-	body, err := f.get(ctx, url, f.defaultHeaders)
-	if err != nil {
-		return FundGZ{}, fmt.Errorf("fetch fund estimate for %s: %w", code, err)
-	}
-
-	return ParseFundGZ(string(body))
-}
-
 func (f *Fetcher) populateFromBulk(ctx context.Context, fund *FundData, code string) {
-	rows, navDate, prevDate, err := f.FetchAllFunds(ctx)
+	rows, navDate, prevDate, err := f.eastMoney.FetchBulk(ctx)
 	if err != nil {
 		f.logger.Debug("populate from bulk skipped", "code", code, "error", err)
 
@@ -93,7 +43,7 @@ func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code
 		return
 	}
 
-	info, err := f.FetchFundInfo(ctx, code)
+	info, err := f.eastMoney.FetchFundInfo(ctx, code)
 	if err != nil || len(info.NetWorthTrend) == 0 {
 		f.logger.Debug("populate from fund info skipped", "code", code)
 
@@ -110,9 +60,9 @@ func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code
 	}
 
 	fund.NAV = latest.Y
-	fund.NAVDate = formatFundInfoDate(latest.X)
+	fund.NAVDate = eastmoney.FormatFundInfoDate(latest.X)
 
-	if len(info.NetWorthTrend) >= minFundInfoPoints {
+	if len(info.NetWorthTrend) >= eastmoney.MinFundInfoPoints {
 		fund.PrevNAV = info.NetWorthTrend[len(info.NetWorthTrend)-2].Y
 		fund.DayChange = fund.NAV - fund.PrevNAV
 	}
@@ -125,8 +75,8 @@ func (f *Fetcher) populatePrevNAV(ctx context.Context, fund *FundData, code stri
 		return
 	}
 
-	info, err := f.FetchFundInfo(ctx, code)
-	if err != nil || len(info.NetWorthTrend) < minFundInfoPoints {
+	info, err := f.eastMoney.FetchFundInfo(ctx, code)
+	if err != nil || len(info.NetWorthTrend) < eastmoney.MinFundInfoPoints {
 		f.logger.Debug("populate prevnav skipped", "code", code)
 
 		return
@@ -145,7 +95,7 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 				trade, _ := strconv.ParseFloat(row.Trade, 64)
 				if trade > 0 {
 					fund.LatestNAV = trade
-					fund.LatestTime = time.Now().In(shanghaiLoc).Format("15:04:05")
+					fund.LatestTime = time.Now().In(eastmoney.ShanghaiLocation).Format("15:04:05")
 
 					return
 				}
@@ -153,7 +103,7 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 		}
 	}
 
-	fundGZ, err := f.fetchFundEstimate(ctx, code)
+	fundGZ, err := f.eastMoney.FetchFundEstimate(ctx, code)
 	if err != nil {
 		f.logger.Debug("add estimate failed", "code", code, "error", err)
 

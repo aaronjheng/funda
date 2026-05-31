@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aaronjheng/funda/internal/eastmoney"
 )
 
 func (f *Fetcher) populateFromETF(ctx context.Context, fund *FundData, code string) {
@@ -33,32 +35,10 @@ func (f *Fetcher) populateFromETF(ctx context.Context, fund *FundData, code stri
 		fund.LatestNAV = trade
 		fund.PrevNAV = settle
 		fund.DayChange = trade - settle
-		fund.NAVDate = time.Now().In(shanghaiLoc).Format("2006-01-02")
+		fund.NAVDate = time.Now().In(eastmoney.ShanghaiLocation).Format("2006-01-02")
 
 		f.logger.Debug("populated from etf", "code", code, "nav", fund.NAV)
 
 		return
 	}
-}
-
-func (f *Fetcher) refreshEstimate(ctx context.Context, code string, etfRows []ETFRow) (float64, string) {
-	for _, row := range etfRows {
-		if strings.HasSuffix(row.Symbol, code) {
-			trade, _ := strconv.ParseFloat(row.Trade, 64)
-			if trade > 0 {
-				return trade, time.Now().In(shanghaiLoc).Format("15:04:05")
-			}
-		}
-	}
-
-	fundGZ, err := f.fetchFundEstimate(ctx, code)
-	if err != nil {
-		f.logger.Debug("estimate refresh failed", "code", code, "error", err)
-
-		return 0, ""
-	}
-
-	gsz, _ := strconv.ParseFloat(fundGZ.GSZ, 64)
-
-	return gsz, fundGZ.GZTime
 }

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
+
+	"github.com/aaronjheng/funda/internal/sina"
 )
 
 //nolint:gochecknoglobals // timezone lookup is immutable and needed across the package
@@ -309,22 +311,13 @@ func SaveFundCache(logger *slog.Logger, fundData FundData) {
 // ETFTickerCache provides a short-lived cache for ETF bulk data.
 type ETFTickerCache struct {
 	mu        sync.RWMutex
-	data      []ETFRow
+	data      []sina.ETFRow
 	timestamp time.Time
 	logger    *slog.Logger
 }
 
-// ETFRow represents a single ETF entry from Sina.
-type ETFRow struct {
-	Symbol        string `json:"symbol"`
-	Name          string `json:"name"`
-	Trade         string `json:"trade"`
-	Settlement    string `json:"settlement"`
-	ChangePercent string `json:"changepercent"`
-}
-
 // Get returns cached ETF data if within TTL.
-func (c *ETFTickerCache) Get() ([]ETFRow, bool) {
+func (c *ETFTickerCache) Get() ([]sina.ETFRow, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -340,7 +333,7 @@ func (c *ETFTickerCache) Get() ([]ETFRow, bool) {
 }
 
 // Set stores ETF data with current timestamp.
-func (c *ETFTickerCache) Set(data []ETFRow) {
+func (c *ETFTickerCache) Set(data []sina.ETFRow) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

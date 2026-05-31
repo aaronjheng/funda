@@ -2,11 +2,8 @@ package view
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
@@ -16,7 +13,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/adrg/xdg"
 
 	"github.com/aaronjheng/funda/internal/config"
 	"github.com/aaronjheng/funda/internal/data"
@@ -66,21 +62,7 @@ type estimatesFetchedMsg struct {
 	estimates map[string]data.EstimateUpdate
 }
 
-type searchResultMsg struct {
-	results    []data.SearchHit
-	err        error
-	generation int
-}
-
 type clearClipboardMsg struct{}
-
-type searchItem struct {
-	data.SearchHit
-}
-
-func (i searchItem) Title() string       { return i.Code + "  " + i.Name }
-func (i searchItem) Description() string { return i.Price + "  " + i.Change }
-func (i searchItem) FilterValue() string { return i.Code + i.Name }
 
 type Model struct {
 	//nolint:containedctx // context is passed through the Bubble Tea command chain
@@ -119,52 +101,10 @@ type Model struct {
 	searchGeneration int
 }
 
-func cardCacheKey(
-	fund config.Fund,
-	fundData data.FundData,
-	cardWidth int,
-	lastTradingDay time.Time,
-	highlighted bool,
-) string {
-	return fmt.Sprintf("%s|%d|%s|%s|%v|%v|%s|%v|%s|%s|%v",
-		fund.Code,
-		cardWidth,
-		fundData.Name,
-		fundData.Alias,
-		fundData.NAV,
-		fundData.PrevNAV,
-		fundData.NAVDate,
-		fundData.LatestNAV,
-		fundData.LatestTime,
-		lastTradingDay.Format("2006-01-02"),
-		highlighted,
-	)
-}
-
 func clearClipboardMsgCmd() tea.Cmd {
 	return tea.Tick(clipboardDisplayDuration, func(_ time.Time) tea.Msg {
 		return clearClipboardMsg{}
 	})
-}
-
-func newSearchList() list.Model {
-	delegate := list.NewDefaultDelegate()
-	searchList := list.New([]list.Item{}, delegate, 0, 0)
-	searchList.SetShowHelp(false)
-	searchList.SetShowStatusBar(false)
-	searchList.SetShowTitle(false)
-	searchList.SetShowFilter(false)
-	searchList.SetShowPagination(false)
-	searchList.SetFilteringEnabled(false)
-	searchList.KeyMap.Quit.SetEnabled(false)
-	searchList.KeyMap.ForceQuit.SetEnabled(false)
-	searchList.KeyMap.Filter.SetEnabled(false)
-	searchList.KeyMap.ClearFilter.SetEnabled(false)
-	searchList.KeyMap.ShowFullHelp.SetEnabled(false)
-	searchList.KeyMap.CloseFullHelp.SetEnabled(false)
-	searchList.DisableQuitKeybindings()
-
-	return searchList
 }
 
 func newViewportComponent() viewport.Model {
@@ -322,46 +262,6 @@ func (m Model) renderSearchView() tea.View {
 	v.AltScreen = true
 
 	return v
-}
-
-type persistedState struct {
-	SortField SortField `json:"sort_field"`
-	SortAsc   bool      `json:"sort_asc"`
-}
-
-func statePath() string {
-	return filepath.Join(xdg.StateHome, "funda", "state.json")
-}
-
-func (m Model) saveState() {
-	dir := filepath.Dir(statePath())
-	_ = os.MkdirAll(dir, sortStateDirPermissions)
-
-	data, err := json.Marshal(persistedState{SortField: m.sortField, SortAsc: m.sortAsc})
-	if err != nil {
-		return
-	}
-
-	_ = os.WriteFile(statePath(), data, sortStateFilePermissions)
-}
-
-func (m Model) loadState() Model {
-	data, err := os.ReadFile(statePath())
-	if err != nil {
-		return m
-	}
-
-	var state persistedState
-
-	err = json.Unmarshal(data, &state)
-	if err != nil {
-		return m
-	}
-
-	m.sortField = state.SortField
-	m.sortAsc = state.SortAsc
-
-	return m.sortFunds()
 }
 
 func (m Model) sortFieldLabel() string {
@@ -569,80 +469,6 @@ func (m Model) renderMain() string {
 	sections = append(sections, viewportStr)
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
-}
-
-func (m Model) renderFundsContent(cardWidth int, lastTradingDay time.Time) string {
-	if len(m.sortedFunds) == 0 {
-		return lipgloss.NewStyle().
-			Width(m.width).
-			Align(lipgloss.Center).
-			Render("No funds in this group")
-	}
-
-	rows := m.renderFundRows(m.sortedFunds, cardWidth, lastTradingDay)
-
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
-}
-
-func (m Model) computeCardWidth() int {
-	cardWidth := (m.width - cardPaddingWidth) / cardsPerRow
-	if cardWidth < minCardWidth {
-		cardWidth = m.width - cardPaddingWidth
-	}
-
-	return cardWidth
-}
-
-func (m Model) renderFundRows(
-	funds []config.Fund,
-	cardWidth int,
-	lastTradingDay time.Time,
-) []string {
-	var rows []string
-
-	for idx := 0; idx < len(funds); idx += cardsPerRow {
-		pair := m.renderFundPair(funds, idx, cardWidth, lastTradingDay)
-
-		if len(pair) == cardsPerRow {
-			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, pair[0], " ", pair[1]))
-		} else {
-			rows = append(rows, pair[0])
-		}
-	}
-
-	return rows
-}
-
-func (m Model) renderFundPair(
-	funds []config.Fund,
-	startIdx int,
-	cardWidth int,
-	lastTradingDay time.Time,
-) []string {
-	var pair []string
-
-	for col := 0; col < cardsPerRow && startIdx+col < len(funds); col++ {
-		fund := funds[startIdx+col]
-
-		fundData := m.fundData[fund.Code]
-		if fundData.Code == "" {
-			fundData.Code = fund.Code
-			fundData.Alias = fund.Alias
-		}
-
-		cacheKey := cardCacheKey(fund, fundData, cardWidth, lastTradingDay, fund.Code == m.copiedCode)
-		if cached, ok := m.cardCache[cacheKey]; ok {
-			pair = append(pair, cached)
-
-			continue
-		}
-
-		card := RenderFundCard(fundData, cardWidth, lastTradingDay, fund.Code == m.copiedCode)
-		m.cardCache[cacheKey] = card
-		pair = append(pair, card)
-	}
-
-	return pair
 }
 
 func (m Model) availableHeight() int {

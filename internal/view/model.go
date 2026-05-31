@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/help"
-	"charm.land/bubbles/v2/list"
-	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -38,9 +36,6 @@ const (
 	helpPaddingHorizontal       = 2
 	helpCenterDiv               = 2
 	helpVerticalDiv             = 3
-	searchContentPadding        = 4 // border(2) + padding(2)
-	searchOverlayBorder         = 2
-	searchOverlayHeightOffset   = 6 // border(2) + padding(2) + margin(2)
 )
 
 type SortField int
@@ -66,39 +61,34 @@ type clearClipboardMsg struct{}
 
 type Model struct {
 	//nolint:containedctx // context is passed through the Bubble Tea command chain
-	ctx              context.Context
-	cancel           context.CancelFunc
-	config           config.Config
-	groups           []config.Group
-	currentGroup     int
-	fundData         map[string]data.FundData
-	loading          bool
-	errMsg           string
-	width            int
-	height           int
-	fetcher          *data.Fetcher
-	logger           *slog.Logger
-	searchMode       bool
-	keymap           KeyMap
-	helpModel        help.Model
-	showHelp         bool
-	lastRefresh      time.Time
-	lastFullRefresh  time.Time
-	viewport         viewport.Model
-	clipboardMsg     string
-	copiedCode       string
-	toastMsg         string
-	cardCache        map[string]string
-	sortField        SortField
-	sortAsc          bool
-	sortedFunds      []config.Fund
-	configFilepath   string
-	hasUnsavedFunds  bool
-	reloadConfirm    bool
-	textInput        textinput.Model
-	searchList       list.Model
-	lastSearchQuery  string
-	searchGeneration int
+	ctx             context.Context
+	cancel          context.CancelFunc
+	config          config.Config
+	groups          []config.Group
+	currentGroup    int
+	fundData        map[string]data.FundData
+	loading         bool
+	errMsg          string
+	width           int
+	height          int
+	fetcher         *data.Fetcher
+	logger          *slog.Logger
+	keymap          KeyMap
+	helpModel       help.Model
+	showHelp        bool
+	lastRefresh     time.Time
+	lastFullRefresh time.Time
+	viewport        viewport.Model
+	clipboardMsg    string
+	copiedCode      string
+	toastMsg        string
+	cardCache       map[string]string
+	sortField       SortField
+	sortAsc         bool
+	sortedFunds     []config.Fund
+	configFilepath  string
+	hasUnsavedFunds bool
+	reloadConfirm   bool
 }
 
 func clearClipboardMsgCmd() tea.Cmd {
@@ -125,45 +115,35 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, l
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	textInput := textinput.New()
-	textInput.Prompt = "Search: "
-	textInput.Placeholder = "fund code or name..."
-	textInput.CharLimit = 20
-
 	model := Model{
-		ctx:              ctx,
-		cancel:           cancel,
-		config:           cfg,
-		groups:           cfg.Groups,
-		currentGroup:     0,
-		fundData:         make(map[string]data.FundData),
-		loading:          false,
-		errMsg:           "",
-		width:            0,
-		height:           0,
-		fetcher:          fetcher,
-		logger:           logger,
-		searchMode:       false,
-		keymap:           DefaultKeyMap(),
-		helpModel:        help.New(),
-		showHelp:         false,
-		lastRefresh:      time.Time{},
-		lastFullRefresh:  time.Time{},
-		viewport:         newViewportComponent(),
-		clipboardMsg:     "",
-		copiedCode:       "",
-		toastMsg:         "",
-		cardCache:        make(map[string]string),
-		sortField:        SortDefault,
-		sortAsc:          false,
-		sortedFunds:      nil,
-		configFilepath:   configFilepath,
-		hasUnsavedFunds:  false,
-		reloadConfirm:    false,
-		textInput:        textInput,
-		searchList:       newSearchList(),
-		lastSearchQuery:  "",
-		searchGeneration: 0,
+		ctx:             ctx,
+		cancel:          cancel,
+		config:          cfg,
+		groups:          cfg.Groups,
+		currentGroup:    0,
+		fundData:        make(map[string]data.FundData),
+		loading:         false,
+		errMsg:          "",
+		width:           0,
+		height:          0,
+		fetcher:         fetcher,
+		logger:          logger,
+		keymap:          DefaultKeyMap(),
+		helpModel:       help.New(),
+		showHelp:        false,
+		lastRefresh:     time.Time{},
+		lastFullRefresh: time.Time{},
+		viewport:        newViewportComponent(),
+		clipboardMsg:    "",
+		copiedCode:      "",
+		toastMsg:        "",
+		cardCache:       make(map[string]string),
+		sortField:       SortDefault,
+		sortAsc:         false,
+		sortedFunds:     nil,
+		configFilepath:  configFilepath,
+		hasUnsavedFunds: false,
+		reloadConfirm:   false,
 	}
 	model = model.loadGroupCacheIgnoreTTL()
 	model = model.loadState()
@@ -181,10 +161,6 @@ func (m Model) Init() tea.Cmd {
 func (m Model) View() tea.View {
 	if m.width == 0 {
 		return tea.NewView("Loading...")
-	}
-
-	if m.searchMode {
-		return m.renderSearchView()
 	}
 
 	view := m.renderMain()
@@ -237,29 +213,6 @@ func (m Model) View() tea.View {
 	v := tea.NewView(view)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
-
-	return v
-}
-
-func (m Model) renderSearchView() tea.View {
-	m.textInput.SetWidth(m.width - searchContentPadding)
-	m.searchList.SetSize(m.width-searchContentPadding, m.height-searchOverlayHeightOffset)
-
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		m.textInput.View(),
-		m.searchList.View(),
-	)
-
-	styled := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(accentColor)).
-		Padding(1, 1).
-		Width(m.width - searchOverlayBorder).
-		Height(m.height - 1).
-		Render(content)
-
-	v := tea.NewView(styled)
-	v.AltScreen = true
 
 	return v
 }

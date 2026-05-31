@@ -19,7 +19,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m = m.applySearchDimensions()
 		m = m.syncViewport()
 
 		return m, nil
@@ -43,9 +42,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case estimatesFetchedMsg:
 		return m.handleEstimatesFetched(msg)
 
-	case searchResultMsg:
-		return m.handleSearchResult(msg)
-
 	case clearClipboardMsg:
 		m.toastMsg = ""
 		m.clipboardMsg = ""
@@ -58,15 +54,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if m.searchMode {
-		return m.handleSearchKey(msg)
-	}
-
 	return m.handleNormalKey(msg)
 }
 
 func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
-	if m.searchMode || msg.Button != tea.MouseLeft {
+	if msg.Button != tea.MouseLeft {
 		return m, nil
 	}
 
@@ -204,15 +196,6 @@ func (m Model) handleActionKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleRefreshKey()
 	case "R":
 		return m.handleReloadKey()
-	case "s":
-		m.searchMode = true
-		m.textInput.Reset()
-		m.searchList.ResetSelected()
-		m.lastSearchQuery = ""
-		m.searchGeneration = 0
-		m = m.applySearchDimensions()
-
-		return m, nil
 	case "c":
 		return m.handleClearCache()
 	case "?":

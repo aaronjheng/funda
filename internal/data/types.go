@@ -2,14 +2,6 @@ package data
 
 const percentFactor = 100.0
 
-// SearchHit holds a single fund search result.
-type SearchHit struct {
-	Code   string
-	Name   string
-	Price  string
-	Change string
-}
-
 // FundData holds all data for a single fund.
 type FundData struct {
 	Code       string  `json:"code"`

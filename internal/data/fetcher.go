@@ -16,7 +16,6 @@ var errHTTPStatus = errors.New("http error status")
 const (
 	httpClientTimeout = 30 * time.Second
 	maxConcurrent     = 3
-	maxSearchResults  = 10
 	minFundInfoPoints = 2
 )
 
@@ -219,20 +218,6 @@ func (f *Fetcher) RemoveCachedEntries(codes []string) {
 	}
 
 	f.etfCache = &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}, logger: f.logger}
-}
-
-// SearchFund searches for funds by keyword.
-func (f *Fetcher) SearchFund(ctx context.Context, keyword string) ([]SearchHit, error) {
-	f.logger.Info("searching funds", "keyword", keyword)
-
-	var results []SearchHit
-
-	results = f.searchInBulkFunds(ctx, keyword, results)
-	results = f.searchInETFFunds(ctx, keyword, results)
-
-	f.logger.Info("search completed", "keyword", keyword, "results", len(results))
-
-	return results, nil
 }
 
 // FetchAllCards fetches data for multiple funds concurrently with semaphore limiting.

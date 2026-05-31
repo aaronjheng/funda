@@ -6,7 +6,6 @@ type KeyMap struct {
 	Quit         key.Binding
 	Refresh      key.Binding
 	ReloadConfig key.Binding
-	Search       key.Binding
 	ClearCache   key.Binding
 	Sort         key.Binding
 	Help         key.Binding
@@ -19,7 +18,7 @@ type KeyMap struct {
 func (k KeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.Help,
-		k.Quit, k.Refresh, k.Search, k.Sort,
+		k.Quit, k.Refresh, k.Sort,
 		k.Up, k.Down, k.Left, k.Right,
 	}
 }
@@ -30,7 +29,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 			k.Quit,
 			k.Refresh,
 			k.ReloadConfig,
-			k.Search,
 			k.ClearCache,
 			k.Sort,
 			k.Help,
@@ -47,7 +45,6 @@ func DefaultKeyMap() KeyMap {
 		Quit:         key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 		Refresh:      key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		ReloadConfig: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "reload config")),
-		Search:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "search")),
 		ClearCache:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear cache")),
 		Help:         key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Sort:         key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "sort")),

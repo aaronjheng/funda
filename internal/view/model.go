@@ -356,6 +356,7 @@ func (m Model) handleRefreshKey() (tea.Model, tea.Cmd) {
 
 	m.fetcher.RemoveCachedEntries(codes)
 
+	m.fundData = make(map[string]data.FundData)
 	m.cardCache = make(map[string]string)
 	m.loading = true
 	m.errMsg = ""

@@ -125,16 +125,13 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 	f.populateFromFundInfo(ctx, &fund, code)
 	f.populateFromETF(ctx, &fund, code)
 
-	// Last resort: if NAV is unavailable, use PrevNAV as fallback.
+	f.addEstimate(ctx, &fund, code)
+
 	if fund.NAV == 0 && fund.PrevNAV > 0 {
 		fund.NAV = fund.PrevNAV
 		fund.PrevNAV = 0
 
 		f.logger.Debug("using prevnav as nav fallback", "code", code)
-	}
-
-	if fund.NAV > 0 {
-		f.addEstimate(ctx, &fund, code)
 	}
 
 	if fund.NAV > 0 {

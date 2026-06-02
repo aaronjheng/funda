@@ -40,19 +40,8 @@ func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code
 }
 
 func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) {
-	etfRows, err := f.FetchETFData(ctx)
-	if err == nil {
-		for _, row := range etfRows {
-			if strings.HasSuffix(row.Symbol, code) {
-				trade, _ := strconv.ParseFloat(row.Trade, 64)
-				if trade > 0 {
-					fund.LatestNAV = trade
-					fund.LatestTime = time.Now().In(eastmoney.ShanghaiLocation).Format("15:04:05")
-
-					return
-				}
-			}
-		}
+	if f.addETFEstimate(ctx, fund) {
+		return
 	}
 
 	fundGZ, err := f.eastMoney.FetchFundEstimate(ctx, code)
@@ -62,7 +51,47 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 		return
 	}
 
-	if fund.NAV == 0 {
+	f.addFundGZEstimate(fund, fundGZ)
+
+	f.logger.Debug("estimate added", "code", code, "latest_nav", fund.LatestNAV)
+}
+
+func (f *Fetcher) addETFEstimate(ctx context.Context, fund *FundData) bool {
+	etfRows, err := f.FetchETFData(ctx)
+	if err != nil {
+		return false
+	}
+
+	for _, row := range etfRows {
+		if !strings.HasSuffix(row.Symbol, fund.Code) {
+			continue
+		}
+
+		trade, _ := strconv.ParseFloat(row.Trade, 64)
+		if trade > 0 {
+			fund.LatestNAV = trade
+			fund.LatestTime = time.Now().In(eastmoney.ShanghaiLocation).Format("15:04:05")
+
+			return true
+		}
+	}
+
+	return false
+}
+
+func (f *Fetcher) addFundGZEstimate(fund *FundData, fundGZ eastmoney.FundGZ) {
+	if fund.Name == "" {
+		fund.Name = fundGZ.Name
+		fund.IsQDII = strings.Contains(fund.Name, "QDII")
+	}
+
+	gsz, _ := strconv.ParseFloat(fundGZ.GSZ, 64)
+	if gsz > 0 {
+		fund.LatestNAV = gsz
+		fund.LatestTime = fundGZ.GZTime
+	}
+
+	if fund.NAV == 0 || fundGZ.JZRQ >= fund.NAVDate {
 		dwjz, _ := strconv.ParseFloat(fundGZ.DWJZ, 64)
 		if dwjz > 0 {
 			fund.NAV = dwjz
@@ -73,12 +102,4 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 			}
 		}
 	}
-
-	gsz, _ := strconv.ParseFloat(fundGZ.GSZ, 64)
-	if gsz > 0 {
-		fund.LatestNAV = gsz
-		fund.LatestTime = fundGZ.GZTime
-	}
-
-	f.logger.Debug("estimate added", "code", code, "latest_nav", fund.LatestNAV)
 }

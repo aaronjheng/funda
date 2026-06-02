@@ -153,7 +153,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, l
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		m.fetchAllFundsCmd(),
+		m.removeCachedAndFetch(),
 		m.startTickCmd(),
 	)
 }
@@ -215,6 +215,21 @@ func (m Model) View() tea.View {
 	v.MouseMode = tea.MouseModeCellMotion
 
 	return v
+}
+
+func (m Model) removeCachedAndFetch() tea.Cmd {
+	group := m.groups[m.currentGroup]
+
+	codes := make([]string, 0, len(group.Funds))
+	for _, fund := range group.Funds {
+		codes = append(codes, fund.Code)
+	}
+
+	m.fetcher.RemoveCachedEntries(codes)
+	m.loading = true
+	m.lastFullRefresh = time.Now()
+
+	return m.fetchAllFundsCmd()
 }
 
 func (m Model) sortFieldLabel() string {

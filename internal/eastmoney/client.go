@@ -9,45 +9,25 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
-	"strconv"
-	"strings"
 	"time"
 )
 
 const (
-	bulkURL = "https://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx" +
-		"?t=1&lx=1&letter=&gsid=&text=&sort=zdf,desc" +
-		"&page=1,50000&dt=1580914040623&atfc=&onlySale=0"
-
 	fundGZURL = "https://fundgz.1234567.com.cn/js/%s.js"
 
-	minShowdayEntries = 2
-	minDataItems      = 7
-	minRegexpMatches  = 2
-
-	fundRowCodeIndex    = 0
-	fundRowNameIndex    = 1
-	fundRowNAVIndex     = 3
-	fundRowAccNAVIndex  = 4
-	fundRowPrevNAVIndex = 5
+	minRegexpMatches = 2
 
 	// MinFundInfoPoints is the minimum number of net worth points required.
 	MinFundInfoPoints = 2
-
-	percentFactor = 100.0
 )
 
 var (
-	unquotedKeyRe   = regexp.MustCompile(`([a-zA-Z_]\w*)\s*:`)
-	trailingCommaRe = regexp.MustCompile(`,\s*([}\]])`)
-	jsonpWrapRe     = regexp.MustCompile(`\((.*)\)`)
-	fundNameRe      = regexp.MustCompile(`var\s+fS_name\s*=\s*"([^"]*)";`)
-	netWorthRe      = regexp.MustCompile(`var\s+Data_netWorthTrend\s*=\s*(\[.*?\]);`)
+	jsonpWrapRe = regexp.MustCompile(`\((.*)\)`)
+	fundNameRe  = regexp.MustCompile(`var\s+fS_name\s*=\s*"([^"]*)";`)
+	netWorthRe  = regexp.MustCompile(`var\s+Data_netWorthTrend\s*=\s*(\[.*?\]);`)
 
-	errInsufficientShowday    = errors.New("insufficient showday data")
 	errNoJSONPWrapper         = errors.New("no jsonp wrapper found")
 	errNoNetWorthTrend        = errors.New("no Data_netWorthTrend found")
-	errUnmarshalEastMoney     = errors.New("unmarshal eastmoney")
 	errUnmarshalNetWorthTrend = errors.New("unmarshal net worth trend")
 	errHTTPStatus             = errors.New("http error status")
 )
@@ -63,20 +43,6 @@ var ShanghaiLocation = func() *time.Location {
 
 	return loc
 }()
-
-// FundRow represents a parsed row from EastMoney bulk data.
-type FundRow struct {
-	Code       string
-	Name       string
-	NAV        float64
-	AccNAV     float64
-	PrevNAV    float64
-	PrevAccNAV float64
-	DayChange  float64
-	DayPct     float64
-	NAVDate    string
-	PrevDate   string
-}
 
 // NetWorthPoint represents a single data point from fund net worth trend.
 type NetWorthPoint struct {
@@ -103,7 +69,6 @@ type FundGZ struct {
 
 // Client defines the interface for EastMoney API operations.
 type Client interface {
-	FetchBulk(ctx context.Context) ([]FundRow, string, string, error)
 	FetchFundInfo(ctx context.Context, code string) (FundInfo, error)
 	FetchFundEstimate(ctx context.Context, code string) (FundGZ, error)
 }
@@ -132,30 +97,7 @@ func NewAPIClient(client Doer, logger *slog.Logger) *APIClient {
 	}
 }
 
-// FetchBulk fetches the bulk EastMoney fund data.
-func (c *APIClient) FetchBulk(ctx context.Context) ([]FundRow, string, string, error) {
-	c.logger.Info("fetching eastmoney bulk data")
-
-	body, err := doGet(ctx, c.client, bulkURL, c.headers, c.logger)
-	if err != nil {
-		c.logger.Error("fetch eastmoney bulk failed", "error", err)
-
-		return nil, "", "", fmt.Errorf("fetch eastmoney bulk: %w", err)
-	}
-
-	rows, navDate, prevDate, err := ParseBulk(string(body))
-	if err != nil {
-		c.logger.Error("parse eastmoney bulk failed", "error", err)
-
-		return nil, "", "", err
-	}
-
-	c.logger.Info("eastmoney bulk fetched", "funds", len(rows), "nav_date", navDate)
-
-	return rows, navDate, prevDate, nil
-}
-
-// FetchFundInfo fetches per-fund detail for NAV fallback.
+// FetchFundInfo fetches per-fund detail including net worth trend.
 func (c *APIClient) FetchFundInfo(ctx context.Context, code string) (FundInfo, error) {
 	c.logger.Debug("fetching per-fund info", "code", code)
 
@@ -183,62 +125,6 @@ func (c *APIClient) FetchFundEstimate(ctx context.Context, code string) (FundGZ,
 	return ParseFundGZ(string(body))
 }
 
-// ParseBulk parses the EastMoney bulk fund response.
-func ParseBulk(text string) ([]FundRow, string, string, error) {
-	text = strings.TrimSpace(text)
-	text = strings.TrimPrefix(text, "var db=")
-
-	text = unquotedKeyRe.ReplaceAllString(text, `"$1":`)
-	text = trailingCommaRe.ReplaceAllString(text, "$1")
-
-	var raw struct {
-		Showday []string            `json:"showday"`
-		Datas   [][]json.RawMessage `json:"datas"`
-	}
-
-	err := json.Unmarshal([]byte(text), &raw)
-	if err != nil {
-		return nil, "", "", fmt.Errorf("%w: %w", errUnmarshalEastMoney, err)
-	}
-
-	if len(raw.Showday) < minShowdayEntries {
-		return nil, "", "", errInsufficientShowday
-	}
-
-	rows := parseRows(raw.Datas, raw.Showday)
-
-	return rows, raw.Showday[0], raw.Showday[1], nil
-}
-
-func parseRows(datas [][]json.RawMessage, showday []string) []FundRow {
-	var rows []FundRow
-
-	for _, item := range datas {
-		if len(item) < minDataItems {
-			continue
-		}
-
-		var row FundRow
-
-		row.Code = unmarshalString(item[fundRowCodeIndex])
-		row.Name = unmarshalString(item[fundRowNameIndex])
-		row.NAV = unmarshalFloat(item[fundRowNAVIndex])
-		row.AccNAV = unmarshalFloat(item[fundRowAccNAVIndex])
-
-		if len(item) > fundRowPrevNAVIndex {
-			row.PrevNAV = unmarshalFloat(item[fundRowPrevNAVIndex])
-			row.DayChange = row.NAV - row.PrevNAV
-			row.DayPct = calculatePercent(row.DayChange, row.PrevNAV)
-		}
-
-		row.NAVDate = showday[0]
-		row.PrevDate = showday[1]
-		rows = append(rows, row)
-	}
-
-	return rows
-}
-
 // ParseFundGZ parses the EastMoney fundgz JSONP response.
 func ParseFundGZ(text string) (FundGZ, error) {
 	matches := jsonpWrapRe.FindStringSubmatch(text)
@@ -250,7 +136,7 @@ func ParseFundGZ(text string) (FundGZ, error) {
 
 	err := json.Unmarshal([]byte(matches[1]), &fundGZ)
 	if err != nil {
-		return FundGZ{}, fmt.Errorf("%w: %w", errUnmarshalEastMoney, err)
+		return FundGZ{}, fmt.Errorf("unmarshal fund gz: %w", err)
 	}
 
 	return fundGZ, nil
@@ -290,39 +176,6 @@ func FormatFundInfoDate(timestamp int64) string {
 	}
 
 	return time.UnixMilli(timestamp).In(ShanghaiLocation).Format("2006-01-02")
-}
-
-func unmarshalString(raw json.RawMessage) string {
-	var s string
-
-	_ = json.Unmarshal(raw, &s)
-
-	return s
-}
-
-func unmarshalFloat(raw json.RawMessage) float64 {
-	var str string
-
-	err := json.Unmarshal(raw, &str)
-	if err == nil {
-		value, _ := strconv.ParseFloat(str, 64)
-
-		return value
-	}
-
-	var value float64
-
-	_ = json.Unmarshal(raw, &value)
-
-	return value
-}
-
-func calculatePercent(change, base float64) float64 {
-	if base == 0 {
-		return 0
-	}
-
-	return change / base * percentFactor
 }
 
 func doGet(

@@ -122,12 +122,10 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 	fund.Code = code
 	fund.Alias = alias
 
-	f.populateFromBulk(ctx, &fund, code)
 	f.populateFromFundInfo(ctx, &fund, code)
-	f.populatePrevNAV(ctx, &fund, code)
 	f.populateFromETF(ctx, &fund, code)
 
-	// Last resort: if all APIs failed, use PrevNAV from the bulk API.
+	// Last resort: if NAV is unavailable, use PrevNAV as fallback.
 	if fund.NAV == 0 && fund.PrevNAV > 0 {
 		fund.NAV = fund.PrevNAV
 		fund.PrevNAV = 0

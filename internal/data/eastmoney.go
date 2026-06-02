@@ -9,40 +9,7 @@ import (
 	"github.com/aaronjheng/funda/internal/eastmoney"
 )
 
-func (f *Fetcher) populateFromBulk(ctx context.Context, fund *FundData, code string) {
-	rows, navDate, prevDate, err := f.eastMoney.FetchBulk(ctx)
-	if err != nil {
-		f.logger.Debug("populate from bulk skipped", "code", code, "error", err)
-
-		return
-	}
-
-	for _, row := range rows {
-		if row.Code == code {
-			fund.Name = row.Name
-			fund.NAV = row.NAV
-			fund.AccNAV = row.AccNAV
-			fund.PrevNAV = row.PrevNAV
-			fund.DayChange = row.DayChange
-			fund.NAVDate = navDate
-			fund.IsQDII = strings.Contains(row.Name, "QDII")
-
-			if fund.NAV == 0 {
-				fund.NAVDate = prevDate
-			}
-
-			return
-		}
-	}
-
-	f.logger.Debug("fund not found in bulk", "code", code)
-}
-
 func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code string) {
-	if fund.NAV > 0 {
-		return
-	}
-
 	info, err := f.eastMoney.FetchFundInfo(ctx, code)
 	if err != nil || len(info.NetWorthTrend) == 0 {
 		f.logger.Debug("populate from fund info skipped", "code", code)
@@ -59,6 +26,8 @@ func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code
 		fund.Name = info.Name
 	}
 
+	fund.IsQDII = strings.Contains(fund.Name, "QDII")
+
 	fund.NAV = latest.Y
 	fund.NAVDate = eastmoney.FormatFundInfoDate(latest.X)
 
@@ -68,23 +37,6 @@ func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code
 	}
 
 	f.logger.Debug("populated from fund info", "code", code, "nav", fund.NAV)
-}
-
-func (f *Fetcher) populatePrevNAV(ctx context.Context, fund *FundData, code string) {
-	if fund.PrevNAV != 0 || fund.NAV <= 0 {
-		return
-	}
-
-	info, err := f.eastMoney.FetchFundInfo(ctx, code)
-	if err != nil || len(info.NetWorthTrend) < eastmoney.MinFundInfoPoints {
-		f.logger.Debug("populate prevnav skipped", "code", code)
-
-		return
-	}
-
-	fund.PrevNAV = info.NetWorthTrend[len(info.NetWorthTrend)-2].Y
-	fund.DayChange = fund.NAV - fund.PrevNAV
-	f.logger.Debug("populated prevnav from fund info", "code", code, "prevnav", fund.PrevNAV)
 }
 
 func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) {

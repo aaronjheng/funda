@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
-
-	"github.com/aaronjheng/funda/internal/sina"
 )
 
 //nolint:gochecknoglobals // timezone lookup is immutable and needed across the package
@@ -32,7 +30,6 @@ const (
 	tradingCacheDuration    = 5 * time.Minute
 	navPublishCacheDuration = 30 * time.Minute
 	offHoursCacheDuration   = 12 * time.Hour
-	etfCacheDuration        = 60 * time.Second
 	cacheDirPermissions     = 0o700
 	cacheFilePermissions    = 0o600
 )
@@ -306,39 +303,4 @@ func SaveFundCache(logger *slog.Logger, fundData FundData) {
 	_ = os.WriteFile(path, data, cacheFilePermissions)
 
 	logger.Debug("disk cache saved", "code", fundData.Code)
-}
-
-// ETFTickerCache provides a short-lived cache for ETF bulk data.
-type ETFTickerCache struct {
-	mu        sync.RWMutex
-	data      []sina.ETFRow
-	timestamp time.Time
-	logger    *slog.Logger
-}
-
-// Get returns cached ETF data if within TTL.
-func (c *ETFTickerCache) Get() ([]sina.ETFRow, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.data == nil || time.Since(c.timestamp) > etfCacheDuration {
-		c.logger.Debug("etf ticker cache miss")
-
-		return nil, false
-	}
-
-	c.logger.Debug("etf ticker cache hit", "count", len(c.data))
-
-	return c.data, true
-}
-
-// Set stores ETF data with current timestamp.
-func (c *ETFTickerCache) Set(data []sina.ETFRow) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.data = data
-	c.timestamp = time.Now()
-
-	c.logger.Debug("etf ticker cache set", "count", len(data))
 }

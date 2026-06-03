@@ -2,15 +2,11 @@ package data
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strconv"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/aaronjheng/funda/internal/eastmoney"
-	"github.com/aaronjheng/funda/internal/sina"
 )
 
 const maxConcurrent = 3
@@ -18,42 +14,19 @@ const maxConcurrent = 3
 // Fetcher handles HTTP requests and caching for fund data.
 type Fetcher struct {
 	eastMoney eastmoney.Client
-	sina      sina.Client
 	sem       chan struct{}
 	memCache  *MemoryCache
-	etfCache  *ETFTickerCache
 	logger    *slog.Logger
 }
 
 // NewFetcher creates a new Fetcher with injected API clients.
-func NewFetcher(eastMoney eastmoney.Client, sinaClient sina.Client, logger *slog.Logger) *Fetcher {
+func NewFetcher(eastMoney eastmoney.Client, logger *slog.Logger) *Fetcher {
 	return &Fetcher{
 		eastMoney: eastMoney,
-		sina:      sinaClient,
 		sem:       make(chan struct{}, maxConcurrent),
 		memCache:  NewMemoryCache(logger),
-		etfCache: &ETFTickerCache{
-			mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}, logger: logger,
-		},
-		logger: logger,
+		logger:    logger,
 	}
-}
-
-// FetchETFData fetches ETF data from Sina Finance.
-func (f *Fetcher) FetchETFData(ctx context.Context) ([]sina.ETFRow, error) {
-	if data, ok := f.etfCache.Get(); ok {
-		return data, nil
-	}
-
-	rows, err := f.sina.FetchETFData(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fetch etf data: %w", err)
-	}
-
-	f.etfCache.Set(rows)
-	f.logger.Info("sina etf fetched", "funds", len(rows))
-
-	return rows, nil
 }
 
 // EstimateUpdate holds a single fund estimate refresh result.
@@ -66,8 +39,6 @@ type EstimateUpdate struct {
 // It only updates LatestNAV and LatestTime, without re-fetching NAV data.
 func (f *Fetcher) RefreshAllEstimates(ctx context.Context, codes []string) map[string]EstimateUpdate {
 	f.logger.Info("refreshing estimates", "count", len(codes))
-
-	etfRows, _ := f.FetchETFData(ctx)
 
 	result := make(map[string]EstimateUpdate)
 
@@ -85,7 +56,7 @@ func (f *Fetcher) RefreshAllEstimates(ctx context.Context, codes []string) map[s
 			f.sem <- struct{}{}
 			defer func() { <-f.sem }()
 
-			latestNAV, latestTime := f.refreshEstimate(ctx, fundCode, etfRows)
+			latestNAV, latestTime := f.refreshEstimate(ctx, fundCode)
 
 			estMu.Lock()
 			result[fundCode] = EstimateUpdate{LatestNAV: latestNAV, LatestTime: latestTime}
@@ -123,7 +94,6 @@ func (f *Fetcher) GetFundDataFull(ctx context.Context, code, alias string) (Fund
 	fund.Alias = alias
 
 	f.populateFromFundInfo(ctx, &fund, code)
-	f.populateFromETF(ctx, &fund, code)
 
 	f.addEstimate(ctx, &fund, code)
 
@@ -150,7 +120,6 @@ func (f *Fetcher) ClearCache() {
 	f.logger.Info("clearing all caches")
 
 	f.memCache.Clear()
-	f.etfCache = &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}, logger: f.logger}
 
 	ClearFundCache(f.logger)
 }
@@ -163,8 +132,6 @@ func (f *Fetcher) RemoveCachedEntries(codes []string) {
 		f.memCache.Remove(code)
 		DeleteFundCache(f.logger, code)
 	}
-
-	f.etfCache = &ETFTickerCache{mu: sync.RWMutex{}, data: nil, timestamp: time.Time{}, logger: f.logger}
 }
 
 // FetchAllCards fetches data for multiple funds concurrently with semaphore limiting.
@@ -207,16 +174,7 @@ func (f *Fetcher) FetchAllCards(
 	return result
 }
 
-func (f *Fetcher) refreshEstimate(ctx context.Context, code string, etfRows []sina.ETFRow) (float64, string) {
-	for _, row := range etfRows {
-		if strings.HasSuffix(row.Symbol, code) {
-			trade, _ := strconv.ParseFloat(row.Trade, 64)
-			if trade > 0 {
-				return trade, time.Now().In(eastmoney.ShanghaiLocation).Format("15:04:05")
-			}
-		}
-	}
-
+func (f *Fetcher) refreshEstimate(ctx context.Context, code string) (float64, string) {
 	fundGZ, err := f.eastMoney.FetchFundEstimate(ctx, code)
 	if err != nil {
 		f.logger.Debug("estimate refresh failed", "code", code, "error", err)

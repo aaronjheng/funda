@@ -11,7 +11,6 @@ import (
 	"github.com/aaronjheng/funda/internal/config"
 	"github.com/aaronjheng/funda/internal/data"
 	"github.com/aaronjheng/funda/internal/eastmoney"
-	"github.com/aaronjheng/funda/internal/sina"
 	"github.com/aaronjheng/funda/internal/telemetry/log"
 	"github.com/aaronjheng/funda/internal/view"
 )
@@ -49,8 +48,7 @@ func rootCmd() *cobra.Command {
 
 			httpClient := &http.Client{Timeout: httpClientTimeout}
 			eastMoneyClient := eastmoney.NewAPIClient(httpClient, logger)
-			sinaClient := sina.NewAPIClient(httpClient, logger)
-			fetcher := data.NewFetcher(eastMoneyClient, sinaClient, logger)
+			fetcher := data.NewFetcher(eastMoneyClient, logger)
 
 			return view.Run(cfg, fetcher, cfgFilepath, logger)
 		},

@@ -4,7 +4,6 @@ import (
 	"context"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/aaronjheng/funda/internal/eastmoney"
 )
@@ -40,10 +39,6 @@ func (f *Fetcher) populateFromFundInfo(ctx context.Context, fund *FundData, code
 }
 
 func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) {
-	if f.addETFEstimate(ctx, fund) {
-		return
-	}
-
 	fundGZ, err := f.eastMoney.FetchFundEstimate(ctx, code)
 	if err != nil {
 		f.logger.Debug("add estimate failed", "code", code, "error", err)
@@ -54,29 +49,6 @@ func (f *Fetcher) addEstimate(ctx context.Context, fund *FundData, code string) 
 	f.addFundGZEstimate(fund, fundGZ)
 
 	f.logger.Debug("estimate added", "code", code, "latest_nav", fund.LatestNAV)
-}
-
-func (f *Fetcher) addETFEstimate(ctx context.Context, fund *FundData) bool {
-	etfRows, err := f.FetchETFData(ctx)
-	if err != nil {
-		return false
-	}
-
-	for _, row := range etfRows {
-		if !strings.HasSuffix(row.Symbol, fund.Code) {
-			continue
-		}
-
-		trade, _ := strconv.ParseFloat(row.Trade, 64)
-		if trade > 0 {
-			fund.LatestNAV = trade
-			fund.LatestTime = time.Now().In(eastmoney.ShanghaiLocation).Format("15:04:05")
-
-			return true
-		}
-	}
-
-	return false
 }
 
 func (f *Fetcher) addFundGZEstimate(fund *FundData, fundGZ eastmoney.FundGZ) {

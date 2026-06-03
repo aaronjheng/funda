@@ -2,7 +2,7 @@
 
 ## Project
 
-A fund valuation TUI tool built with Go, using Bubble Tea for the terminal user interface and fetching fund data from EastMoney and Sina Finance APIs.
+A fund valuation TUI tool built with Go, using Bubble Tea for the terminal user interface and fetching fund data from EastMoney APIs.
 
 ## Environment
 

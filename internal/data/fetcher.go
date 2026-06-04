@@ -3,13 +3,12 @@ package data
 import (
 	"context"
 	"log/slog"
+	"runtime"
 	"strconv"
 	"sync"
 
 	"github.com/aaronjheng/funda/internal/eastmoney"
 )
-
-const maxConcurrent = 3
 
 // Fetcher handles HTTP requests and caching for fund data.
 type Fetcher struct {
@@ -23,7 +22,7 @@ type Fetcher struct {
 func NewFetcher(eastMoney eastmoney.Client, logger *slog.Logger) *Fetcher {
 	return &Fetcher{
 		eastMoney: eastMoney,
-		sem:       make(chan struct{}, maxConcurrent),
+		sem:       make(chan struct{}, runtime.NumCPU()),
 		memCache:  NewMemoryCache(logger),
 		logger:    logger,
 	}

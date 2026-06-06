@@ -227,7 +227,6 @@ func (m Model) handleActionKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		return m.handleClearCache()
 	case "?":
-		m.helpModel.ShowAll = true
 		m.showHelp = true
 
 		return m, nil
@@ -254,7 +253,6 @@ func (m Model) handleHelpKey(msg tea.KeyPressMsg) (bool, Model) {
 
 	switch msg.String() {
 	case "?", "esc":
-		m.helpModel.ShowAll = false
 		m.showHelp = false
 	}
 

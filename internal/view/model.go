@@ -7,7 +7,6 @@ import (
 	"sort"
 	"time"
 
-	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -73,8 +72,6 @@ type Model struct {
 	height          int
 	fetcher         *data.Fetcher
 	logger          *slog.Logger
-	keymap          KeyMap
-	helpModel       help.Model
 	showHelp        bool
 	lastRefresh     time.Time
 	lastFullRefresh time.Time
@@ -129,8 +126,6 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, l
 		height:          0,
 		fetcher:         fetcher,
 		logger:          logger,
-		keymap:          DefaultKeyMap(),
-		helpModel:       help.New(),
 		showHelp:        false,
 		lastRefresh:     time.Time{},
 		lastFullRefresh: time.Time{},
@@ -178,19 +173,14 @@ func (m Model) View() tea.View {
 	}
 
 	if m.showHelp {
-		helpContent := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(m.colors.accent)).
-			Padding(1, helpPaddingHorizontal).
-			Render(m.helpModel.View(m.keymap))
-
+		helpContent := m.renderHelpPanel()
 		helpW := lipgloss.Width(helpContent)
 		helpH := lipgloss.Height(helpContent)
 
 		mainLayer := lipgloss.NewLayer(view)
 		helpLayer := lipgloss.NewLayer(helpContent).
-			X((m.width - helpW) / helpCenterDiv).
-			Y((m.height - helpH) / helpVerticalDiv)
+			X(max(0, (m.width-helpW)/helpCenterDiv)).
+			Y(max(0, (m.height-helpH)/helpVerticalDiv))
 
 		comp := lipgloss.NewCompositor(mainLayer, helpLayer)
 		view = comp.Render()

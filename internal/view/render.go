@@ -14,25 +14,53 @@ import (
 
 const (
 	fundLabelWidth = 12
-	primaryColor   = "#e2e8f0"
-	secondaryColor = "#64748b"
-	borderColor    = "#334155"
-	positiveColor  = "#ff6b6b"
-	negativeColor  = "#51cf66"
-	accentColor    = "#60a5fa"
 	toastMaxWidth  = 60
 )
 
-func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time, highlighted bool) string {
+type themeColors struct {
+	secondary string
+	border    string
+	positive  string
+	negative  string
+	accent    string
+}
+
+func themeForBackground(isDark bool) themeColors {
+	if isDark {
+		return themeColors{
+			secondary: "#94a3b8",
+			border:    "#475569",
+			positive:  "#f87171",
+			negative:  "#4ade80",
+			accent:    "#cbd5e1",
+		}
+	}
+
+	return themeColors{
+		secondary: "#64748b",
+		border:    "#cbd5e1",
+		positive:  "#dc2626",
+		negative:  "#15803d",
+		accent:    "#475569",
+	}
+}
+
+func RenderFundCard(
+	fundData data.FundData,
+	width int,
+	lastTradingDay time.Time,
+	highlighted bool,
+	colors themeColors,
+) string {
 	contentWidth := max(0, width-cardFrameWidth)
 
 	title := formatFundTitle(fundData)
 	navStr := formatNAV(fundData)
 
-	changeStr, changeSty := formatDayChange(fundData)
-	estimateStr, estimateSty := formatEstimate(fundData, lastTradingDay)
+	changeStr, changeSty := formatDayChange(fundData, colors)
+	estimateStr, estimateSty := formatEstimate(fundData, lastTradingDay, colors)
 
-	labelStyle := lipgloss.NewStyle().Width(fundLabelWidth).Foreground(lipgloss.Color(secondaryColor))
+	labelStyle := lipgloss.NewStyle().Width(fundLabelWidth).Foreground(lipgloss.Color(colors.secondary))
 	valueMaxWidth := max(0, contentWidth-fundLabelWidth)
 	valueStyle := lipgloss.NewStyle().MaxWidth(valueMaxWidth)
 
@@ -43,7 +71,7 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time,
 		valueStyle.MaxWidth(valueMaxWidth).Render(navValue)
 
 	indent := strings.Repeat(" ", fundLabelWidth)
-	dateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+	dateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colors.secondary))
 
 	dateLine := indent
 	if fundData.NAVDate != "" {
@@ -53,14 +81,21 @@ func RenderFundCard(fundData data.FundData, width int, lastTradingDay time.Time,
 	lines := make([]string, 0, fundCardContentLines)
 	lines = append(lines, titleLine, navLine, dateLine)
 
-	estimateLine, timeLine := formatEstimateLines(estimateStr, estimateSty, labelStyle, valueMaxWidth, fundData.LatestTime)
+	estimateLine, timeLine := formatEstimateLines(
+		estimateStr,
+		estimateSty,
+		labelStyle,
+		valueMaxWidth,
+		fundData.LatestTime,
+		colors,
+	)
 	lines = append(lines, estimateLine, timeLine)
 
 	content := strings.Join(lines, "\n")
 
-	borderCol := lipgloss.Color(borderColor)
+	borderCol := lipgloss.Color(colors.border)
 	if highlighted {
-		borderCol = lipgloss.Color(accentColor)
+		borderCol = lipgloss.Color(colors.accent)
 	}
 
 	return lipgloss.NewStyle().
@@ -87,9 +122,9 @@ func formatNAV(fundData data.FundData) string {
 	return "--"
 }
 
-func formatDayChange(fundData data.FundData) (string, lipgloss.Style) {
+func formatDayChange(fundData data.FundData, colors themeColors) (string, lipgloss.Style) {
 	if fundData.NAV <= 0 || fundData.PrevNAV <= 0 {
-		return "--", lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+		return "--", lipgloss.NewStyle().Foreground(lipgloss.Color(colors.secondary))
 	}
 
 	pct := fundData.DayChangePercent()
@@ -101,11 +136,11 @@ func formatDayChange(fundData data.FundData) (string, lipgloss.Style) {
 
 	changeStr := fmt.Sprintf("%s%.2f%%", symbol, pct)
 
-	return changeStr, changeStyleFor(pct)
+	return changeStr, changeStyleFor(pct, colors)
 }
 
-func formatEstimate(fundData data.FundData, lastTradingDay time.Time) (string, lipgloss.Style) {
-	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+func formatEstimate(fundData data.FundData, lastTradingDay time.Time, colors themeColors) (string, lipgloss.Style) {
+	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colors.secondary))
 
 	if data.NavIsCurrent(fundData.NAVDate, lastTradingDay) {
 		return "", mutedStyle
@@ -124,7 +159,7 @@ func formatEstimate(fundData data.FundData, lastTradingDay time.Time) (string, l
 
 	estimateStr := fmt.Sprintf("%.4f (%s%.2f%%)", fundData.LatestNAV, symbol, pct)
 
-	return estimateStr, changeStyleFor(pct)
+	return estimateStr, changeStyleFor(pct, colors)
 }
 
 func formatEstimateLines(
@@ -133,6 +168,7 @@ func formatEstimateLines(
 	labelStyle lipgloss.Style,
 	valueMaxWidth int,
 	latestTime string,
+	colors themeColors,
 ) (string, string) {
 	var estimateLine string
 
@@ -141,7 +177,7 @@ func formatEstimateLines(
 		estimateLine = estLabel + estimateSty.MaxWidth(valueMaxWidth).Render(estimateStr)
 	} else {
 		estLabel := labelStyle.Render("最新估值:")
-		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colors.secondary))
 		estimateLine = estLabel + mutedStyle.MaxWidth(valueMaxWidth).Render("-- (--)")
 	}
 
@@ -149,7 +185,7 @@ func formatEstimateLines(
 
 	if estimateStr != "" && latestTime != "" {
 		indent := strings.Repeat(" ", fundLabelWidth)
-		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colors.secondary))
 
 		if strings.Count(latestTime, ":") == 1 {
 			latestTime += ":00"
@@ -158,21 +194,21 @@ func formatEstimateLines(
 		timeLine = indent + timeStyle.Render(latestTime)
 	} else {
 		indent := strings.Repeat(" ", fundLabelWidth)
-		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+		mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colors.secondary))
 		timeLine = indent + mutedStyle.Render("--")
 	}
 
 	return estimateLine, timeLine
 }
 
-func changeStyleFor(pct float64) lipgloss.Style {
+func changeStyleFor(pct float64, colors themeColors) lipgloss.Style {
 	switch {
 	case pct > 0:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(positiveColor))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(colors.positive))
 	case pct < 0:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(negativeColor))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(colors.negative))
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(colors.secondary))
 	}
 }
 
@@ -182,7 +218,7 @@ type GroupTabBounds struct {
 	EndX   int
 }
 
-func tabStyles() (lipgloss.Style, lipgloss.Style, lipgloss.Style) {
+func tabStyles(colors themeColors) (lipgloss.Style, lipgloss.Style, lipgloss.Style) {
 	activeBorder := lipgloss.Border{
 		Top:         "─",
 		Bottom:      " ",
@@ -207,30 +243,35 @@ func tabStyles() (lipgloss.Style, lipgloss.Style, lipgloss.Style) {
 
 	tabSty := lipgloss.NewStyle().
 		Border(inactiveBorder, true).
-		BorderForeground(lipgloss.Color(borderColor)).
-		Foreground(lipgloss.Color(secondaryColor)).
+		BorderForeground(lipgloss.Color(colors.border)).
+		Foreground(lipgloss.Color(colors.secondary)).
 		Padding(0, 1)
 
 	activeSty := lipgloss.NewStyle().
 		Border(activeBorder, true).
-		BorderForeground(lipgloss.Color(primaryColor)).
-		Foreground(lipgloss.Color(primaryColor)).
+		BorderForeground(lipgloss.Color(colors.accent)).
+		Foreground(lipgloss.Color(colors.accent)).
 		Bold(true).
 		Padding(0, 1)
 
 	gapSty := lipgloss.NewStyle().
 		Border(inactiveBorder, false, false, true, false).
-		BorderForeground(lipgloss.Color(borderColor))
+		BorderForeground(lipgloss.Color(colors.border))
 
 	return activeSty, tabSty, gapSty
 }
 
-func RenderGroupSelector(groups []config.Group, selectedIdx int, width int) (string, []GroupTabBounds) {
+func RenderGroupSelector(
+	groups []config.Group,
+	selectedIdx int,
+	width int,
+	colors themeColors,
+) (string, []GroupTabBounds) {
 	if len(groups) == 0 {
 		return "", nil
 	}
 
-	activeSty, tabSty, gapSty := tabStyles()
+	activeSty, tabSty, gapSty := tabStyles(colors)
 
 	var renderedTabs []string
 
@@ -305,7 +346,7 @@ func truncateWidth(str string, maxWidth int) string {
 	return out.String()
 }
 
-func RenderStatusBar(left, right string, width int, isError bool) string {
+func RenderStatusBar(left, right string, width int, isError bool, colors themeColors) string {
 	leftSty := lipgloss.NewStyle().PaddingLeft(1)
 
 	rightSty := lipgloss.NewStyle().
@@ -313,15 +354,15 @@ func RenderStatusBar(left, right string, width int, isError bool) string {
 		PaddingRight(1)
 
 	if isError {
-		leftSty = leftSty.Foreground(lipgloss.Color(positiveColor))
-		rightSty = rightSty.Foreground(lipgloss.Color(positiveColor))
+		leftSty = leftSty.Foreground(lipgloss.Color(colors.positive))
+		rightSty = rightSty.Foreground(lipgloss.Color(colors.positive))
 	} else {
-		leftSty = leftSty.Foreground(lipgloss.Color(secondaryColor))
-		rightSty = rightSty.Foreground(lipgloss.Color(secondaryColor))
+		leftSty = leftSty.Foreground(lipgloss.Color(colors.secondary))
+		rightSty = rightSty.Foreground(lipgloss.Color(colors.secondary))
 	}
 
 	sep := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(borderColor)).
+		Foreground(lipgloss.Color(colors.border)).
 		Width(width).
 		Render(strings.Repeat("\u2500", width))
 
@@ -333,7 +374,7 @@ func RenderStatusBar(left, right string, width int, isError bool) string {
 	return lipgloss.JoinVertical(lipgloss.Left, sep, content)
 }
 
-func RenderScrollbar(view viewport.Model) string {
+func RenderScrollbar(view viewport.Model, colors themeColors) string {
 	total := view.TotalLineCount()
 	visible := view.VisibleLineCount()
 
@@ -353,8 +394,8 @@ func RenderScrollbar(view viewport.Model) string {
 
 	var builder strings.Builder
 
-	thumbStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(secondaryColor))
-	trackStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(borderColor))
+	thumbStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colors.secondary))
+	trackStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colors.border))
 
 	for line := range visible {
 		if line >= thumbPos && line < thumbPos+thumbSize {

@@ -12,16 +12,13 @@ import (
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if model, handled := m.handleTerminalMsg(msg); handled {
+		return model, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		return m.handleKeyPress(msg)
-
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m = m.syncViewport()
-
-		return m, nil
 
 	case tea.MouseClickMsg:
 		return m.handleMouseClick(msg)
@@ -51,6 +48,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) handleTerminalMsg(msg tea.Msg) (Model, bool) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m = m.syncViewport()
+
+		return m, true
+	case tea.BackgroundColorMsg:
+		return m.applyBackgroundColor(msg), true
+	}
+
+	return m, false
+}
+
+func (m Model) applyBackgroundColor(msg tea.BackgroundColorMsg) Model {
+	colors := themeForBackground(msg.IsDark())
+	if m.colors == colors {
+		return m
+	}
+
+	m.colors = colors
+	m.cardCache = make(map[string]string)
+
+	if m.width > 0 {
+		m = m.syncViewport()
+	}
+
+	return m
 }
 
 func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -92,7 +120,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleSelectorClick(msg tea.MouseClickMsg) (bool, Model, tea.Cmd) {
-	selectorStr, bounds := RenderGroupSelector(m.groups, m.currentGroup, m.width)
+	selectorStr, bounds := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
 	selectorHeight := lipgloss.Height(selectorStr)
 
 	if msg.Y < 1 || msg.Y >= 1+selectorHeight {
@@ -133,7 +161,7 @@ func (m Model) fundDisplayName(fund config.Fund) string {
 }
 
 func (m Model) isMouseInFundArea(mouseY int) bool {
-	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
+	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
 	headerHeight := 1 + lipgloss.Height(selectorStr)
 	bottomReserve := lipgloss.Height(m.renderStatusBar())
 
@@ -141,7 +169,7 @@ func (m Model) isMouseInFundArea(mouseY int) bool {
 }
 
 func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows int) int {
-	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
+	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
 	headerHeight := 1 + lipgloss.Height(selectorStr)
 	relativeY := msg.Y - headerHeight + m.viewport.YOffset()
 

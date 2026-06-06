@@ -76,7 +76,7 @@ func (m Model) renderFundPair(
 			continue
 		}
 
-		card := RenderFundCard(fundData, cardWidth, lastTradingDay, fund.Code == m.copiedCode)
+		card := RenderFundCard(fundData, cardWidth, lastTradingDay, fund.Code == m.copiedCode, m.colors)
 		m.cardCache[cacheKey] = card
 		pair = append(pair, card)
 	}
@@ -88,6 +88,7 @@ func (m Model) renderFundsContent(cardWidth int, lastTradingDay time.Time) strin
 	if len(m.sortedFunds) == 0 {
 		return lipgloss.NewStyle().
 			Width(m.width).
+			Foreground(lipgloss.Color(m.colors.secondary)).
 			Align(lipgloss.Center).
 			Render("No funds in this group")
 	}

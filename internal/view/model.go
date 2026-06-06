@@ -89,6 +89,7 @@ type Model struct {
 	configFilepath  string
 	hasUnsavedFunds bool
 	reloadConfirm   bool
+	colors          themeColors
 }
 
 func clearClipboardMsgCmd() tea.Cmd {
@@ -144,6 +145,7 @@ func NewModel(cfg config.Config, fetcher *data.Fetcher, configFilepath string, l
 		configFilepath:  configFilepath,
 		hasUnsavedFunds: false,
 		reloadConfirm:   false,
+		colors:          themeForBackground(true),
 	}
 	model = model.loadGroupCacheIgnoreTTL()
 	model = model.loadState()
@@ -155,6 +157,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.removeCachedAndFetch(),
 		m.startTickCmd(),
+		tea.RequestBackgroundColor,
 	)
 }
 
@@ -177,7 +180,7 @@ func (m Model) View() tea.View {
 	if m.showHelp {
 		helpContent := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(accentColor)).
+			BorderForeground(lipgloss.Color(m.colors.accent)).
 			Padding(1, helpPaddingHorizontal).
 			Render(m.helpModel.View(m.keymap))
 
@@ -194,7 +197,7 @@ func (m Model) View() tea.View {
 	} else if m.toastMsg != "" {
 		toastContent := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(accentColor)).
+			BorderForeground(lipgloss.Color(m.colors.accent)).
 			Padding(1, helpCenterDiv).
 			Render(truncateWidth(m.toastMsg, toastMaxWidth))
 
@@ -418,7 +421,7 @@ func (m Model) syncViewport() Model {
 func (m Model) renderMain() string {
 	sections := make([]string, 0, mainSectionsCap)
 
-	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
+	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
 	sections = append(sections, selectorStr)
 
 	scrollbarReserve := 2
@@ -431,7 +434,7 @@ func (m Model) renderMain() string {
 	m.viewport.SetContent(fundsContent)
 
 	viewportStr := m.viewport.View()
-	if s := RenderScrollbar(m.viewport); s != "" {
+	if s := RenderScrollbar(m.viewport, m.colors); s != "" {
 		viewportStr = lipgloss.JoinHorizontal(lipgloss.Top, viewportStr, " ", s)
 	}
 
@@ -441,7 +444,7 @@ func (m Model) renderMain() string {
 }
 
 func (m Model) availableHeight() int {
-	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width)
+	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
 
 	top := 1 + lipgloss.Height(selectorStr)
 
@@ -458,7 +461,7 @@ func (m Model) renderStatusBar() string {
 	case m.clipboardMsg != "":
 		right = m.clipboardMsg
 	case m.errMsg != "":
-		return RenderStatusBar(left, m.errMsg, m.width, true)
+		return RenderStatusBar(left, m.errMsg, m.width, true, m.colors)
 	case !m.lastRefresh.IsZero():
 		right = "上次更新: " + m.lastRefresh.Format("15:04:05")
 	case m.loading:
@@ -482,5 +485,5 @@ func (m Model) renderStatusBar() string {
 		return ""
 	}
 
-	return RenderStatusBar(left, right, m.width, false)
+	return RenderStatusBar(left, right, m.width, false, m.colors)
 }

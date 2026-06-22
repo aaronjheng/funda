@@ -19,6 +19,8 @@ const (
 
 	// MinFundInfoPoints is the minimum number of net worth points required.
 	MinFundInfoPoints = 2
+
+	httpClientTimeout = 30 * time.Second
 )
 
 var (
@@ -86,9 +88,9 @@ type APIClient struct {
 }
 
 // NewAPIClient creates a new APIClient.
-func NewAPIClient(client Doer, logger *slog.Logger) *APIClient {
+func NewAPIClient(logger *slog.Logger) *APIClient {
 	return &APIClient{
-		client: client,
+		client: &http.Client{Timeout: httpClientTimeout},
 		logger: logger,
 		headers: map[string]string{
 			"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",

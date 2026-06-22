@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -14,8 +12,6 @@ import (
 	"github.com/aaronjheng/funda/internal/telemetry/log"
 	"github.com/aaronjheng/funda/internal/view"
 )
-
-const httpClientTimeout = 30 * time.Second
 
 func rootCmd() *cobra.Command {
 	var cfg config.Config
@@ -46,8 +42,7 @@ func rootCmd() *cobra.Command {
 			logger, logCleanup := log.New()
 			defer func() { _ = logCleanup() }()
 
-			httpClient := &http.Client{Timeout: httpClientTimeout}
-			eastMoneyClient := eastmoney.NewAPIClient(httpClient, logger)
+			eastMoneyClient := eastmoney.NewAPIClient(logger)
 			fetcher := data.NewFetcher(eastMoneyClient, logger)
 
 			return view.Run(cfg, fetcher, cfgFilepath, logger)

@@ -8,7 +8,6 @@ linters:
     - staticcheck
     - unused
 
-    - arangolint
     - asasalint
     - asciicheck
     - bidichk
@@ -37,7 +36,6 @@ linters:
     - forcetypeassert
     - funcorder
     - funlen
-    - ginkgolinter
     - gocheckcompilerdirectives
     - gochecknoglobals
     - gochecknoinits
@@ -87,25 +85,18 @@ linters:
     - perfsprint
     - prealloc
     - predeclared
-    - promlinter
-    - protogetter
     - reassign
     - recvcheck
     - revive
-    - rowserrcheck
     - sloglint
-    - spancheck
-    - sqlclosecheck
     - tagalign
     - tagliatelle
     - testableexamples
-    - testifylint
     - testpackage
     - thelper
     - tparallel
     - unconvert
     - unparam
-    - unqueryvet
     - usestdlibvars
     - usetesting
     - varnamelen
@@ -113,7 +104,6 @@ linters:
     - whitespace
     - wrapcheck
     - wsl_v5
-    - zerologlint
   settings:
     depguard:
       rules:

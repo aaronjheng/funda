@@ -90,7 +90,10 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if handled, model, cmd := m.handleSelectorClick(msg); handled {
+	selectorStr, bounds := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
+	selectorHeight := lipgloss.Height(selectorStr)
+
+	if handled, model, cmd := m.handleSelectorClick(msg, bounds, selectorHeight); handled {
 		return model, cmd
 	}
 
@@ -98,13 +101,15 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if !m.isMouseInFundArea(msg.Y) {
+	statusBarHeight := lipgloss.Height(m.renderStatusBar())
+
+	if !m.isMouseInFundArea(msg.Y, selectorHeight, statusBarHeight) {
 		return m, nil
 	}
 
 	numRows := (len(m.sortedFunds) + cardsPerRow - 1) / cardsPerRow
 
-	fundIdx := m.fundIndexFromMouse(msg, numRows)
+	fundIdx := m.fundIndexFromMouse(msg, numRows, selectorHeight)
 	if fundIdx < 0 || fundIdx >= len(m.sortedFunds) {
 		return m, nil
 	}
@@ -119,10 +124,11 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	)
 }
 
-func (m Model) handleSelectorClick(msg tea.MouseClickMsg) (bool, Model, tea.Cmd) {
-	selectorStr, bounds := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
-	selectorHeight := lipgloss.Height(selectorStr)
-
+func (m Model) handleSelectorClick(
+	msg tea.MouseClickMsg,
+	bounds []GroupTabBounds,
+	selectorHeight int,
+) (bool, Model, tea.Cmd) {
 	if msg.Y < 1 || msg.Y >= 1+selectorHeight {
 		return false, m, nil
 	}
@@ -132,6 +138,8 @@ func (m Model) handleSelectorClick(msg tea.MouseClickMsg) (bool, Model, tea.Cmd)
 			if b.Index != m.currentGroup {
 				m.currentGroup = b.Index
 				m.viewport.GotoTop()
+				m = m.loadGroupCache()
+				m = m.syncViewport()
 				m.loading = true
 				m.errMsg = ""
 				m.lastFullRefresh = time.Now()
@@ -160,17 +168,14 @@ func (m Model) fundDisplayName(fund config.Fund) string {
 	return fund.Code
 }
 
-func (m Model) isMouseInFundArea(mouseY int) bool {
-	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
-	headerHeight := 1 + lipgloss.Height(selectorStr)
-	bottomReserve := lipgloss.Height(m.renderStatusBar())
+func (m Model) isMouseInFundArea(mouseY, selectorHeight, statusBarHeight int) bool {
+	headerHeight := 1 + selectorHeight
 
-	return mouseY >= headerHeight && mouseY < m.height-bottomReserve
+	return mouseY >= headerHeight && mouseY < m.height-statusBarHeight
 }
 
-func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows int) int {
-	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
-	headerHeight := 1 + lipgloss.Height(selectorStr)
+func (m Model) fundIndexFromMouse(msg tea.MouseClickMsg, numRows, selectorHeight int) int {
+	headerHeight := 1 + selectorHeight
 	relativeY := msg.Y - headerHeight + m.viewport.YOffset()
 
 	targetRowIdx := relativeY / fundCardHeight
@@ -299,6 +304,7 @@ func (m Model) handleClearCache() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.errMsg = ""
 	m.lastFullRefresh = time.Now()
+	m = m.syncViewport()
 
 	return m, m.fetchAllFundsCmd()
 }
@@ -308,6 +314,7 @@ func (m Model) handlePrevGroup() (Model, tea.Cmd) {
 		m.currentGroup--
 		m.viewport.GotoTop()
 		m = m.loadGroupCache()
+		m = m.syncViewport()
 		m.loading = true
 		m.errMsg = ""
 
@@ -324,6 +331,7 @@ func (m Model) handleNextGroup() (Model, tea.Cmd) {
 		m.currentGroup++
 		m.viewport.GotoTop()
 		m = m.loadGroupCache()
+		m = m.syncViewport()
 		m.loading = true
 		m.errMsg = ""
 

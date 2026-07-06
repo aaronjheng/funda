@@ -354,6 +354,7 @@ func (m Model) handleRefreshKey() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.errMsg = ""
 	m.lastFullRefresh = time.Now()
+	m = m.syncViewport()
 
 	return m, m.fetchAllFundsCmd()
 }
@@ -389,6 +390,7 @@ func (m Model) handleReloadConfig() (tea.Model, tea.Cmd) {
 	m.hasUnsavedFunds = false
 	m = m.loadGroupCacheIgnoreTTL()
 	m = m.loadState()
+	m = m.syncViewport()
 	m.loading = true
 	m.lastFullRefresh = time.Now()
 
@@ -397,7 +399,7 @@ func (m Model) handleReloadConfig() (tea.Model, tea.Cmd) {
 
 func (m Model) syncViewport() Model {
 	scrollbarReserve := 2
-	m.viewport.SetWidth(m.width - scrollbarReserve)
+	m.viewport.SetWidth(max(0, m.width-scrollbarReserve))
 	m.viewport.SetHeight(m.availableHeight())
 
 	lastTradingDay := data.GetLastTradingDate(time.Now())
@@ -414,15 +416,6 @@ func (m Model) renderMain() string {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
 	sections = append(sections, selectorStr)
 
-	scrollbarReserve := 2
-	m.viewport.SetWidth(m.width - scrollbarReserve)
-	m.viewport.SetHeight(m.availableHeight())
-
-	lastTradingDay := data.GetLastTradingDate(time.Now())
-	cardWidth := m.computeCardWidth()
-	fundsContent := m.renderFundsContent(cardWidth, lastTradingDay)
-	m.viewport.SetContent(fundsContent)
-
 	viewportStr := m.viewport.View()
 	if s := RenderScrollbar(m.viewport, m.colors); s != "" {
 		viewportStr = lipgloss.JoinHorizontal(lipgloss.Top, viewportStr, " ", s)
@@ -437,8 +430,9 @@ func (m Model) availableHeight() int {
 	selectorStr, _ := RenderGroupSelector(m.groups, m.currentGroup, m.width, m.colors)
 
 	top := 1 + lipgloss.Height(selectorStr)
+	bottom := lipgloss.Height(m.renderStatusBar())
 
-	return max(0, m.height-top)
+	return max(0, m.height-top-bottom)
 }
 
 func (m Model) renderStatusBar() string {

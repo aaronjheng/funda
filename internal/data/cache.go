@@ -1,7 +1,8 @@
 package data
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -293,7 +294,7 @@ func SaveFundCache(logger *slog.Logger, fundData FundData) {
 
 	path := filepath.Join(cacheDir(), fundData.Code+".json")
 
-	data, err := json.MarshalIndent(fundData, "", "  ")
+	data, err := json.Marshal(fundData, jsontext.WithIndent("  "))
 	if err != nil {
 		logger.Warn("disk cache marshal error", "code", fundData.Code, "error", err)
 

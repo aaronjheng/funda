@@ -2,7 +2,8 @@ package eastmoney
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -136,7 +137,7 @@ func ParseFundGZ(text string) (FundGZ, error) {
 
 	var fundGZ FundGZ
 
-	err := json.Unmarshal([]byte(matches[1]), &fundGZ)
+	err := json.Unmarshal([]byte(matches[1]), &fundGZ, jsontext.AllowDuplicateNames(true))
 	if err != nil {
 		return FundGZ{}, fmt.Errorf("unmarshal fund gz: %w", err)
 	}
@@ -153,7 +154,7 @@ func ParseFundInfo(text string) (FundInfo, error) {
 
 	var entries []NetWorthPoint
 
-	err := json.Unmarshal([]byte(matches[1]), &entries)
+	err := json.Unmarshal([]byte(matches[1]), &entries, jsontext.AllowDuplicateNames(true))
 	if err != nil {
 		return FundInfo{}, fmt.Errorf("%w: %w", errUnmarshalNetWorthTrend, err)
 	}

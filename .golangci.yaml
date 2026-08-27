@@ -29,7 +29,6 @@ linters:
     - errname
     - errorlint
     - exhaustive
-    - exhaustruct
     - exptostd
     - fatcontext
     - forbidigo
@@ -121,9 +120,6 @@ linters:
         - error
     goconst:
       min-occurrences: 5
-    exhaustruct:
-      include:
-        - 'github\.com/aaronjheng/funda/.+'
     tagliatelle:
       case:
         rules:
